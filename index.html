@@ -1312,7 +1312,7 @@
       canvas.height = video.videoHeight || 720;
       canvas.getContext('2d').drawImage(video, 0, 0);
       const dataURL = canvas.toDataURL('image/jpeg', 0.95);
-      processAndSet(dataURL);
+      processAndAdd(dataURL, 'image/jpeg');
     }
 
     // ══ ENHANCE ══
@@ -1378,17 +1378,19 @@
 
         const prompt = `You are an expert handwriting OCR and proofreading assistant.
 
-Carefully read the handwritten text in the provided images and do the following:
+I have provided ${imageItems.length} image(s) containing handwritten text. They are provided in sequential order.
 
-1. TRANSCRIPTION: Transcribe every word exactly as written across all images in order. ${langNote}
+Carefully read the handwritten text in ALL ${imageItems.length} provided images and do the following:
+
+1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: You must transcribe all images in the order they are provided (Image 1, then Image 2, etc.). Do not skip any image. The final output should be a single unified transcription containing the text from ALL images combined in order. ${langNote}
 2. PARAGRAPHS: ${paraNote}
 3. SPELLING: ${spellNote}
 4. GRAMMAR: In "grammar_issues", identify every grammatical error — subject-verb agreement, wrong tense, missing articles, punctuation, sentence structure, etc. For each, provide: original fragment, corrected version, and a clear explanation.
 
 Return ONLY a valid JSON object — no markdown fences, no extra text — matching this exact schema:
 {
-  "original": "<verbatim transcription, paragraphs split by \\n\\n>",
-  "corrected": "<corrected transcription with spelling fixed, paragraphs split by \\n\\n>",
+  "original": "<verbatim transcription of ALL images, paragraphs split by \\n\\n>",
+  "corrected": "<corrected transcription of ALL images with spelling fixed, paragraphs split by \\n\\n>",
   "spelling_errors": [
     { "wrong": "...", "correct": "...", "note": "brief explanation" }
   ],
