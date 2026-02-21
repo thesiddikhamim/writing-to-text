@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Script — Handwriting Transcriber</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link
+    href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
+    rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0f0d0a;
+      --paper: #f5f0e8;
+      --paper-dark: #ece6d5;
+      --sepia: #8b7355;
+      --sepia-light: #c4aa85;
+      --sepia-faint: #f0e8d5;
+      --red-pen: #b5341a;
+      --green-pen: #2a6b3f;
+      --blue-pen: #1a3a6b;
+      --shadow: rgba(15, 13, 10, 0.12);
+      --sidebar-w: 380px;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Crimson Pro', Georgia, serif;
+      background: var(--paper);
+      color: var(--ink);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.7;
+    }
+
+    /* HEADER */
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--ink);
+      color: var(--paper);
+      padding: 0 2rem;
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 2px 20px rgba(0, 0, 0, 0.3);
+    }
+
+    .logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.45rem;
+      letter-spacing: 0.02em;
+      font-style: italic;
+    }
+
+    .logo span {
+      color: var(--sepia-light);
+      font-style: normal;
+    }
+
+    #menu-btn {
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      align-items: flex-end;
+    }
+
+    #menu-btn span {
+      display: block;
+      height: 2px;
+      background: var(--paper);
+      transition: all 0.3s ease;
+      border-radius: 2px;
+    }
+
+    #menu-btn span:nth-child(1) {
+      width: 22px;
+    }
+
+    #menu-btn span:nth-child(2) {
+      width: 16px;
+    }
+
+    #menu-btn span:nth-child(3) {
+      width: 22px;
+    }
+
+    #menu-btn:hover span {
+      background: var(--sepia-light);
+    }
+
+    #menu-btn.open span:nth-child(1) {
+      transform: translateY(7px) rotate(45deg);
+      width: 22px;
+    }
+
+    #menu-btn.open span:nth-child(2) {
+      opacity: 0;
+      transform: scaleX(0);
+    }
+
+    #menu-btn.open span:nth-child(3) {
+      transform: translateY(-7px) rotate(-45deg);
+    }
+
+    /* SETTINGS PANEL */
+    #settings-panel {
+      position: fixed;
+      top: 56px;
+      right: 0;
+      width: var(--sidebar-w);
+      height: calc(100vh - 56px);
+      background: var(--ink);
+      color: var(--paper);
+      transform: translateX(100%);
+      transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 99;
+      overflow-y: auto;
+      padding: 2rem;
+      box-shadow: -4px 0 30px rgba(0, 0, 0, 0.35);
+    }
+
+    #settings-panel.open {
+      transform: translateX(0);
+    }
+
+    .settings-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.25rem;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid #333;
+      padding-bottom: 1rem;
+      color: var(--sepia-light);
+      letter-spacing: 0.03em;
+    }
+
+    .setting-group {
+      margin-bottom: 1.8rem;
+    }
+
+    .setting-label {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--sepia-light);
+      margin-bottom: 0.5rem;
+      display: block;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .setting-input,
+    .setting-select {
+      width: 100%;
+      background: #1c1a16;
+      border: 1px solid #3a3530;
+      color: var(--paper);
+      padding: 0.7rem 0.9rem;
+      border-radius: 4px;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .setting-input {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.82rem;
+    }
+
+    .setting-select {
+      font-family: 'Crimson Pro', serif;
+      font-size: 1rem;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23c4aa85' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+    }
+
+    .setting-input:focus,
+    .setting-select:focus {
+      border-color: var(--sepia-light);
+    }
+
+    .api-key-wrap {
+      position: relative;
+    }
+
+    .eye-btn {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--sepia-light);
+      font-size: 0.88rem;
+      line-height: 1;
+    }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.7rem;
+    }
+
+    .toggle-row:last-child {
+      margin-bottom: 0;
+    }
+
+    .toggle-desc {
+      font-size: 0.95rem;
+      color: #bbb;
+    }
+
+    .toggle {
+      position: relative;
+      width: 44px;
+      height: 24px;
+      flex-shrink: 0;
+    }
+
+    .toggle input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .toggle-slider {
+      position: absolute;
+      inset: 0;
+      background: #333;
+      border-radius: 24px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .toggle-slider::before {
+      content: '';
+      position: absolute;
+      width: 18px;
+      height: 18px;
+      background: white;
+      border-radius: 50%;
+      top: 3px;
+      left: 3px;
+      transition: transform 0.3s;
+    }
+
+    .toggle input:checked+.toggle-slider {
+      background: var(--sepia);
+    }
+
+    .toggle input:checked+.toggle-slider::before {
+      transform: translateX(20px);
+    }
+
+    .save-btn {
+      width: 100%;
+      padding: 0.9rem;
+      background: var(--sepia);
+      color: var(--paper);
+      border: none;
+      font-family: 'Playfair Display', serif;
+      font-size: 1.05rem;
+      cursor: pointer;
+      border-radius: 4px;
+      transition: all 0.2s;
+      margin-top: 1rem;
+      letter-spacing: 0.03em;
+    }
+
+    .save-btn:hover {
+      background: var(--sepia-light);
+      color: var(--ink);
+    }
+
+    .save-btn:active {
+      transform: scale(0.98);
+    }
+
+    .settings-divider {
+      border: none;
+      border-top: 1px solid #2a2825;
+      margin: 1.5rem 0;
+    }
+
+    .settings-section-label {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.14em;
+      color: #666;
+      margin-bottom: 1rem;
+    }
+
+    /* OVERLAY */
+    #overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.35);
+      z-index: 98;
+      backdrop-filter: blur(2px);
+    }
+
+    #overlay.show {
+      display: block;
+    }
+
+    /* MAIN */
+    main {
+      max-width: 1260px;
+      margin: 0 auto;
+      padding: 2.5rem 2rem;
+      position: relative;
+      z-index: 1;
+    }
+
+    .app-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 2rem;
+    }
+
+    @media (max-width: 860px) {
+      .app-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* PANEL */
+    .panel {
+      background: white;
+      border-radius: 2px;
+      box-shadow: 0 2px 18px var(--shadow), 0 0 0 1px rgba(0, 0, 0, 0.07);
+    }
+
+    .panel-head {
+      background: var(--paper-dark);
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .panel-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--sepia);
+    }
+
+    .panel-body {
+      padding: 1.5rem;
+    }
+
+    /* UPLOAD ZONE */
+    .upload-zone {
+      border: 2px dashed var(--sepia-light);
+      border-radius: 2px;
+      padding: 2.5rem 1.5rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.25s;
+      background: var(--sepia-faint);
+      position: relative;
+    }
+
+    .upload-zone:hover,
+    .upload-zone.drag-over {
+      border-color: var(--sepia);
+      background: #e8dfc8;
+    }
+
+    .upload-zone input[type="file"] {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+      width: 100%;
+      height: 100%;
+    }
+
+    .upload-icon {
+      font-size: 2.2rem;
+      margin-bottom: 0.6rem;
+      display: block;
+    }
+
+    .upload-text {
+      font-size: 1.05rem;
+      color: var(--sepia);
+      margin-bottom: 0.25rem;
+    }
+
+    .upload-sub {
+      font-size: 0.88rem;
+      color: var(--sepia-light);
+      font-style: italic;
+    }
+
+    .or-divider {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin: 1.2rem 0;
+      color: var(--sepia-light);
+      font-style: italic;
+      font-size: 0.95rem;
+    }
+
+    .or-divider::before,
+    .or-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: var(--sepia-light);
+      opacity: 0.4;
+    }
+
+    /* CAMERA */
+    #camera-section {
+      display: none;
+      margin-top: 0;
+    }
+
+    #camera-section.active {
+      display: block;
+    }
+
+    #camera-video {
+      width: 100%;
+      border-radius: 2px;
+      max-height: 280px;
+      object-fit: cover;
+      background: #111;
+      display: block;
+    }
+
+    .camera-controls {
+      display: flex;
+      gap: 0.6rem;
+      margin-top: 0.6rem;
+      flex-wrap: wrap;
+    }
+
+    .cam-btn {
+      flex: 1;
+      padding: 0.6rem 0.8rem;
+      border: none;
+      border-radius: 2px;
+      font-family: 'Crimson Pro', serif;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      white-space: nowrap;
+    }
+
+    .cam-btn.primary {
+      background: var(--ink);
+      color: var(--paper);
+    }
+
+    .cam-btn.primary:hover {
+      background: var(--sepia);
+    }
+
+    .cam-btn.secondary {
+      background: var(--paper-dark);
+      color: var(--ink);
+      border: 1px solid var(--sepia-light);
+    }
+
+    .cam-btn.secondary:hover {
+      background: var(--sepia-faint);
+    }
+
+    .open-camera-btn {
+      width: 100%;
+      padding: 0.8rem;
+      background: var(--ink);
+      color: var(--paper);
+      border: none;
+      border-radius: 2px;
+      font-family: 'Playfair Display', serif;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      letter-spacing: 0.02em;
+    }
+
+    .open-camera-btn:hover {
+      background: var(--sepia);
+    }
+
+    #snap-canvas {
+      display: none;
+    }
+
+    /* PREVIEW */
+    #preview-wrap {
+      display: none;
+      margin-top: 1.2rem;
+    }
+
+    #preview-wrap.show {
+      display: block;
+    }
+
+    #preview-img {
+      width: 100%;
+      border-radius: 2px;
+      box-shadow: 0 2px 12px var(--shadow);
+      max-height: 320px;
+      object-fit: contain;
+      border: 1px solid var(--sepia-light);
+      background: var(--sepia-faint);
+      display: block;
+    }
+
+    .preview-actions {
+      display: flex;
+      gap: 0.6rem;
+      margin-top: 0.6rem;
+    }
+
+    /* STATUS */
+    #status-bar {
+      display: none;
+      margin-top: 1rem;
+      padding: 0.7rem 1rem;
+      border-radius: 2px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.8rem;
+      align-items: center;
+      gap: 0.6rem;
+    }
+
+    #status-bar.show {
+      display: flex;
+    }
+
+    #status-bar.error {
+      background: #fff0ed;
+      color: var(--red-pen);
+      border: 1px solid #f5c6bc;
+    }
+
+    #status-bar.success {
+      background: #edfaf2;
+      color: var(--green-pen);
+      border: 1px solid #b5dfc5;
+    }
+
+    #status-bar.loading {
+      background: #faf7f0;
+      color: var(--sepia);
+      border: 1px solid var(--sepia-light);
+    }
+
+    /* TRANSCRIBE BTN */
+    .transcribe-btn {
+      width: 100%;
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: var(--ink);
+      color: var(--paper);
+      border: none;
+      font-family: 'Playfair Display', serif;
+      font-size: 1.1rem;
+      font-style: italic;
+      cursor: pointer;
+      border-radius: 2px;
+      letter-spacing: 0.03em;
+      transition: all 0.25s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .transcribe-btn::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: var(--sepia);
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: transform 0.3s ease;
+    }
+
+    .transcribe-btn:hover:not(:disabled)::before {
+      transform: scaleX(1);
+    }
+
+    .transcribe-btn span {
+      position: relative;
+      z-index: 1;
+    }
+
+    .transcribe-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+
+    .shortcut-hint {
+      font-size: 0.75rem;
+      color: var(--sepia-light);
+      text-align: center;
+      margin-top: 0.5rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-style: normal;
+    }
+
+    /* SPINNER */
+    .spinner {
+      display: inline-block;
+      width: 15px;
+      height: 15px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* OUTPUT */
+    .output-toolbar {
+      display: flex;
+      gap: 0.4rem;
+      flex-wrap: wrap;
+    }
+
+    .tool-btn {
+      padding: 0.3rem 0.75rem;
+      background: var(--paper-dark);
+      color: var(--sepia);
+      border: 1px solid var(--sepia-light);
+      border-radius: 2px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.72rem;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .tool-btn:hover {
+      background: var(--ink);
+      color: var(--paper);
+      border-color: var(--ink);
+    }
+
+    #transcription-out {
+      min-height: 220px;
+      font-family: Arial, sans-serif;
+      font-size: 0.97rem;
+      line-height: 1.6;
+      color: #111;
+      outline: none;
+      border: 1px solid transparent;
+      padding: 0.5rem;
+      border-radius: 2px;
+      transition: border-color 0.2s;
+    }
+
+    #transcription-out:focus {
+      border-color: var(--sepia-light);
+    }
+
+    #transcription-out:empty::before {
+      content: attr(data-placeholder);
+      color: #aaa;
+      font-style: italic;
+      pointer-events: none;
+      font-family: Arial, sans-serif;
+    }
+
+    #transcription-out p {
+      margin: 0 0 1em 0;
+      font-family: Arial, sans-serif;
+      font-size: 0.97rem;
+      line-height: 1.6;
+      color: #111;
+    }
+
+    #transcription-out p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ANALYSIS */
+    .analysis-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.5rem;
+      margin-top: 2rem;
+    }
+
+    @media (max-width: 700px) {
+      .analysis-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .analysis-panel {
+      background: white;
+      border-radius: 2px;
+      box-shadow: 0 2px 18px var(--shadow), 0 0 0 1px rgba(0, 0, 0, 0.07);
+    }
+
+    .analysis-head {
+      padding: 0.75rem 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    }
+
+    .analysis-head.spelling {
+      background: #fff4f2;
+    }
+
+    .analysis-head.grammar {
+      background: #f0f4ff;
+    }
+
+    .analysis-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .spelling .analysis-dot {
+      background: var(--red-pen);
+    }
+
+    .grammar .analysis-dot {
+      background: var(--blue-pen);
+    }
+
+    .analysis-head-title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.73rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .spelling .analysis-head-title {
+      color: var(--red-pen);
+    }
+
+    .grammar .analysis-head-title {
+      color: var(--blue-pen);
+    }
+
+    .issue-count {
+      margin-left: auto;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+
+    .spelling .issue-count {
+      background: var(--red-pen);
+      color: white;
+    }
+
+    .grammar .issue-count {
+      background: var(--blue-pen);
+      color: white;
+    }
+
+    .analysis-body {
+      padding: 1.2rem;
+      min-height: 100px;
+      max-height: 420px;
+      overflow-y: auto;
+    }
+
+    .analysis-empty {
+      font-style: italic;
+      color: var(--sepia-light);
+      font-size: 0.95rem;
+      text-align: center;
+      padding: 1.5rem 0;
+    }
+
+    .issue-item {
+      padding: 0.85rem;
+      margin-bottom: 0.7rem;
+      border-radius: 2px;
+      border-left: 3px solid;
+      animation: fadeSlide 0.3s ease forwards;
+      opacity: 0;
+    }
+
+    @keyframes fadeSlide {
+      from {
+        opacity: 0;
+        transform: translateY(5px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .issue-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .issue-item.spelling {
+      background: #fff8f6;
+      border-color: var(--red-pen);
+    }
+
+    .issue-item.grammar {
+      background: #f4f8ff;
+      border-color: var(--blue-pen);
+    }
+
+    .issue-word {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.84rem;
+      margin-bottom: 0.35rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+
+    .wrong {
+      text-decoration: line-through;
+      color: var(--red-pen);
+    }
+
+    .right {
+      color: var(--green-pen);
+      font-weight: 600;
+    }
+
+    .arrow {
+      color: var(--sepia-light);
+    }
+
+    .issue-explain {
+      font-size: 0.9rem;
+      color: #555;
+      line-height: 1.55;
+      font-style: italic;
+    }
+
+    /* SCROLLBAR */
+    ::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--paper-dark);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--sepia-light);
+      border-radius: 3px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <div class="logo">Script<span>·</span></div>
+    <button id="menu-btn" aria-label="Settings">
+      <span></span><span></span><span></span>
+    </button>
+  </header>
+
+  <div id="overlay"></div>
+
+  <!-- SETTINGS PANEL -->
+  <div id="settings-panel">
+    <div class="settings-title">⚙ Settings</div>
+
+    <div class="settings-section-label">API Configuration</div>
+
+    <div class="setting-group">
+      <label class="setting-label">Gemini API Key</label>
+      <div class="api-key-wrap">
+        <input type="password" id="api-key-input" class="setting-input" placeholder="AIzaSy...">
+        <button class="eye-btn" id="toggle-key-vis" title="Show/Hide key">👁</button>
+      </div>
+    </div>
+
+    <div class="setting-group">
+      <label class="setting-label">Gemini Model</label>
+      <select id="model-select" class="setting-select">
+        <option value="gemini-3.1-pro-preview">gemini-3.1-pro-preview (Newest & Best Reasoning)</option>
+        <option value="gemini-3-pro-preview">gemini-3-pro-preview (High Quality)</option>
+        <option value="gemini-3-flash-preview">gemini-3-flash-preview (Recommended - Balanced)</option>
+        <option value="gemini-2.5-pro">gemini-2.5-pro (Stable High Quality)</option>
+        <option value="gemini-2.5-flash">gemini-2.5-flash (Stable Fast)</option>
+        <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite (Fastest & Cost-Efficient)</option>
+      </select>
+    </div>
+
+    <hr class="settings-divider">
+    <div class="settings-section-label">Transcription Options</div>
+
+    <div class="setting-group">
+      <label class="setting-label">Language</label>
+      <select id="lang-select" class="setting-select">
+        <option value="auto">Auto Detect</option>
+        <option value="English">English</option>
+        <option value="Bengali">Bengali (বাংলা)</option>
+        <option value="Arabic">Arabic (العربية)</option>
+        <option value="Hindi">Hindi (हिन्दी)</option>
+        <option value="French">French</option>
+        <option value="Spanish">Spanish</option>
+        <option value="Urdu">Urdu (اردو)</option>
+      </select>
+    </div>
+
+    <div class="setting-group">
+      <div class="toggle-row">
+        <span class="toggle-desc">Fix spelling in output</span>
+        <label class="toggle"><input type="checkbox" id="fix-spelling" checked><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-desc">Preserve paragraphs</span>
+        <label class="toggle"><input type="checkbox" id="keep-paragraphs" checked><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
+        <span class="toggle-desc">Show analysis panels</span>
+        <label class="toggle"><input type="checkbox" id="show-analysis" checked><span
+            class="toggle-slider"></span></label>
+      </div>
+    </div>
+
+    <hr class="settings-divider">
+    <div class="settings-section-label">Image Enhancement</div>
+
+    <div class="setting-group">
+      <label class="setting-label">Pre-process Image</label>
+      <select id="enhance-select" class="setting-select">
+        <option value="none">None (send as-is)</option>
+        <option value="contrast">Boost Contrast</option>
+        <option value="grayscale">Grayscale</option>
+        <option value="sharpen">Grayscale + Sharpen</option>
+      </select>
+    </div>
+
+    <button class="save-btn" id="save-settings">Save Settings</button>
+  </div>
+
+  <!-- MAIN -->
+  <main>
+    <div class="app-grid">
+
+      <!-- LEFT: Input -->
+      <div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">📄 Upload or Capture</span>
+          </div>
+          <div class="panel-body">
+
+            <div class="upload-zone" id="drop-zone">
+              <input type="file" id="file-input" accept="image/*">
+              <span class="upload-icon">🖼</span>
+              <div class="upload-text">Drop image here or click to browse</div>
+              <div class="upload-sub">PNG · JPG · WEBP · HEIC</div>
+            </div>
+
+            <div class="or-divider">or</div>
+
+            <button class="open-camera-btn" id="open-camera-btn">📷 Open Camera</button>
+
+            <div id="camera-section">
+              <video id="camera-video" autoplay muted playsinline></video>
+              <canvas id="snap-canvas"></canvas>
+              <div class="camera-controls">
+                <button class="cam-btn primary" id="snap-btn">📸 Capture Photo</button>
+                <button class="cam-btn secondary" id="switch-cam-btn">🔄 Flip</button>
+                <button class="cam-btn secondary" id="close-cam-btn">✕ Close</button>
+              </div>
+            </div>
+
+            <div id="preview-wrap">
+              <img id="preview-img" alt="Selected image preview">
+              <div class="preview-actions">
+                <button class="cam-btn secondary" id="clear-img-btn" style="flex:0;padding:0.5rem 1rem;">✕
+                  Remove</button>
+              </div>
+            </div>
+
+            <div id="status-bar"></div>
+
+            <button class="transcribe-btn" id="transcribe-btn" disabled>
+              <span id="transcribe-label">✦ Transcribe Handwriting</span>
+            </button>
+            <div class="shortcut-hint">Ctrl + Enter to transcribe</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- RIGHT: Output -->
+      <div>
+        <div class="panel">
+          <div class="panel-head">
+            <span class="panel-title">✍ Transcription</span>
+            <div class="output-toolbar">
+              <button class="tool-btn" id="copy-btn">Copy</button>
+              <button class="tool-btn" id="download-btn">Save .txt</button>
+              <button class="tool-btn" id="clear-out-btn">Clear</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div id="transcription-out" contenteditable="true"
+              data-placeholder="Your transcribed text will appear here, with paragraphs preserved as written…">
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Analysis Row -->
+    <div class="analysis-grid" id="analysis-section">
+      <div class="analysis-panel">
+        <div class="analysis-head spelling">
+          <div class="analysis-dot"></div>
+          <span class="analysis-head-title">Spelling Errors</span>
+          <span class="issue-count" id="spell-count">0</span>
+        </div>
+        <div class="analysis-body" id="spell-body">
+          <div class="analysis-empty">No spelling issues detected yet.</div>
+        </div>
+      </div>
+
+      <div class="analysis-panel">
+        <div class="analysis-head grammar">
+          <div class="analysis-dot"></div>
+          <span class="analysis-head-title">Grammar Issues</span>
+          <span class="issue-count" id="grammar-count">0</span>
+        </div>
+        <div class="analysis-body" id="grammar-body">
+          <div class="analysis-empty">No grammar issues detected yet.</div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    // ══ STATE ══
+    let imageDataURL = null;
+    let cameraStream = null;
+    let facingMode = 'environment';
+    let settings = {
+      apiKey: '', model: 'gemini-2.0-flash', lang: 'auto',
+      fixSpelling: true, keepParagraphs: true, showAnalysis: true, enhance: 'none'
+    };
+
+    // ══ LOAD / SAVE SETTINGS ══
+    function loadSettings() {
+      try {
+        const s = JSON.parse(localStorage.getItem('script_v2') || '{}');
+        settings = { ...settings, ...s };
+      } catch (e) { }
+      document.getElementById('api-key-input').value = settings.apiKey;
+      document.getElementById('model-select').value = settings.model;
+      document.getElementById('lang-select').value = settings.lang;
+      document.getElementById('fix-spelling').checked = settings.fixSpelling;
+      document.getElementById('keep-paragraphs').checked = settings.keepParagraphs;
+      document.getElementById('show-analysis').checked = settings.showAnalysis;
+      document.getElementById('enhance-select').value = settings.enhance;
+      document.getElementById('analysis-section').style.display = settings.showAnalysis ? '' : 'none';
+    }
+    loadSettings();
+
+    document.getElementById('save-settings').addEventListener('click', () => {
+      settings.apiKey = document.getElementById('api-key-input').value.trim();
+      settings.model = document.getElementById('model-select').value;
+      settings.lang = document.getElementById('lang-select').value;
+      settings.fixSpelling = document.getElementById('fix-spelling').checked;
+      settings.keepParagraphs = document.getElementById('keep-paragraphs').checked;
+      settings.showAnalysis = document.getElementById('show-analysis').checked;
+      settings.enhance = document.getElementById('enhance-select').value;
+      localStorage.setItem('script_v2', JSON.stringify(settings));
+      document.getElementById('analysis-section').style.display = settings.showAnalysis ? '' : 'none';
+      closeSettings();
+      showStatus('✓ Settings saved successfully.', 'success');
+    });
+
+    // ══ HAMBURGER ══
+    const menuBtn = document.getElementById('menu-btn');
+    const panel = document.getElementById('settings-panel');
+    const overlay = document.getElementById('overlay');
+    menuBtn.addEventListener('click', () => panel.classList.contains('open') ? closeSettings() : openSettings());
+    overlay.addEventListener('click', closeSettings);
+    function openSettings() { panel.classList.add('open'); menuBtn.classList.add('open'); overlay.classList.add('show'); }
+    function closeSettings() { panel.classList.remove('open'); menuBtn.classList.remove('open'); overlay.classList.remove('show'); }
+
+    document.getElementById('toggle-key-vis').addEventListener('click', () => {
+      const inp = document.getElementById('api-key-input');
+      inp.type = inp.type === 'password' ? 'text' : 'password';
+    });
+
+    // ══ FILE UPLOAD ══
+    const fileInput = document.getElementById('file-input');
+    const dropZone = document.getElementById('drop-zone');
+
+    fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+    dropZone.addEventListener('drop', e => {
+      e.preventDefault(); dropZone.classList.remove('drag-over');
+      if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+    });
+
+    function loadFile(file) {
+      if (!file.type.startsWith('image/')) { showStatus('Please select an image file (PNG, JPG, WEBP).', 'error'); return; }
+      const reader = new FileReader();
+      reader.onload = e => processAndSet(e.target.result);
+      reader.readAsDataURL(file);
+    }
+
+    function processAndSet(dataURL) {
+      if (settings.enhance !== 'none') {
+        applyEnhancement(dataURL, settings.enhance, enhanced => setImage(enhanced));
+      } else {
+        setImage(dataURL);
+      }
+    }
+
+    function setImage(dataURL) {
+      imageDataURL = dataURL;
+      document.getElementById('preview-img').src = dataURL;
+      document.getElementById('preview-wrap').classList.add('show');
+      document.getElementById('transcribe-btn').disabled = false;
+      hideCamera();
+      clearStatus();
+    }
+
+    document.getElementById('clear-img-btn').addEventListener('click', () => {
+      imageDataURL = null;
+      document.getElementById('preview-wrap').classList.remove('show');
+      document.getElementById('preview-img').src = '';
+      document.getElementById('transcribe-btn').disabled = true;
+      fileInput.value = '';
+      clearStatus();
+    });
+
+    // ══ CAMERA ══
+    document.getElementById('open-camera-btn').addEventListener('click', openCamera);
+    document.getElementById('close-cam-btn').addEventListener('click', hideCamera);
+    document.getElementById('snap-btn').addEventListener('click', snapPhoto);
+    document.getElementById('switch-cam-btn').addEventListener('click', () => {
+      facingMode = facingMode === 'environment' ? 'user' : 'environment';
+      stopCamera(); startCamera();
+    });
+
+    async function openCamera() {
+      document.getElementById('camera-section').classList.add('active');
+      document.getElementById('open-camera-btn').style.display = 'none';
+      await startCamera();
+    }
+
+    async function startCamera() {
+      try {
+        cameraStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
+        });
+        document.getElementById('camera-video').srcObject = cameraStream;
+      } catch (e) {
+        showStatus('Camera access denied. Please allow camera permission in your browser.', 'error');
+        hideCamera();
+      }
+    }
+
+    function stopCamera() {
+      if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+    }
+
+    function hideCamera() {
+      stopCamera();
+      document.getElementById('camera-section').classList.remove('active');
+      document.getElementById('open-camera-btn').style.display = '';
+    }
+
+    function snapPhoto() {
+      const video = document.getElementById('camera-video');
+      const canvas = document.getElementById('snap-canvas');
+      canvas.width = video.videoWidth || 1280;
+      canvas.height = video.videoHeight || 720;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      const dataURL = canvas.toDataURL('image/jpeg', 0.95);
+      processAndSet(dataURL);
+    }
+
+    // ══ ENHANCE ══
+    function applyEnhancement(dataURL, mode, cb) {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.width; c.height = img.height;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const id = ctx.getImageData(0, 0, c.width, c.height);
+        const d = id.data;
+        for (let i = 0; i < d.length; i += 4) {
+          if (mode === 'grayscale' || mode === 'sharpen') {
+            const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+            d[i] = d[i + 1] = d[i + 2] = g;
+          }
+          if (mode === 'contrast') {
+            const f = 1.45;
+            d[i] = clamp(f * (d[i] - 128) + 128);
+            d[i + 1] = clamp(f * (d[i + 1] - 128) + 128);
+            d[i + 2] = clamp(f * (d[i + 2] - 128) + 128);
+          }
+        }
+        ctx.putImageData(id, 0, 0);
+        cb(c.toDataURL('image/jpeg', 0.92));
+      };
+      img.src = dataURL;
+    }
+    const clamp = v => Math.min(255, Math.max(0, v));
+
+    // ══ TRANSCRIBE ══
+    document.getElementById('transcribe-btn').addEventListener('click', transcribe);
+
+    async function transcribe() {
+      if (!imageDataURL) { showStatus('Please select or capture an image first.', 'error'); return; }
+      if (!settings.apiKey) {
+        showStatus('API key missing — open Settings (☰) and paste your Gemini API key.', 'error');
+        openSettings(); return;
+      }
+
+      const btn = document.getElementById('transcribe-btn');
+      const label = document.getElementById('transcribe-label');
+      btn.disabled = true;
+      label.innerHTML = '<span class="spinner"></span>Transcribing…';
+      showStatus('Sending image to Gemini AI…', 'loading');
+
+      try {
+        const base64 = imageDataURL.split(',')[1];
+        const mimeType = imageDataURL.match(/data:(.*?);/)[1];
+
+        const langNote = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
+        const paraNote = settings.keepParagraphs
+          ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
+          : 'Transcribe as a single continuous block of text.';
+        const spellNote = settings.fixSpelling
+          ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
+          : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
+
+        const prompt = `You are an expert handwriting OCR and proofreading assistant.
+
+Carefully read the handwritten text in the image and do the following:
+
+1. TRANSCRIPTION: Transcribe every word exactly as written. ${langNote}
+2. PARAGRAPHS: ${paraNote}
+3. SPELLING: ${spellNote}
+4. GRAMMAR: In "grammar_issues", identify every grammatical error — subject-verb agreement, wrong tense, missing articles, punctuation, sentence structure, etc. For each, provide: original fragment, corrected version, and a clear explanation.
+
+Return ONLY a valid JSON object — no markdown fences, no extra text — matching this exact schema:
+{
+  "original": "<verbatim transcription, paragraphs split by \\n\\n>",
+  "corrected": "<corrected transcription with spelling fixed, paragraphs split by \\n\\n>",
+  "spelling_errors": [
+    { "wrong": "...", "correct": "...", "note": "brief explanation" }
+  ],
+  "grammar_issues": [
+    { "original": "...", "corrected": "...", "explanation": "clear explanation of the error" }
+  ]
+}`;
+
+        const resp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{
+                parts: [
+                  { inline_data: { mime_type: mimeType, data: base64 } },
+                  { text: prompt }
+                ]
+              }],
+              generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
+            })
+          }
+        );
+
+        if (!resp.ok) {
+          const err = await resp.json().catch(() => ({}));
+          const msg = err.error?.message || `HTTP ${resp.status}`;
+          if (resp.status === 400) throw new Error('Invalid request — check your image format or API key.');
+          if (resp.status === 403) throw new Error('API key invalid or quota exceeded. Check your Gemini API key.');
+          if (resp.status === 429) throw new Error('Rate limit hit. Wait a moment and try again.');
+          throw new Error(msg);
+        }
+
+        const data = await resp.json();
+        let raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (!raw) throw new Error('Gemini returned an empty response. Try a clearer image.');
+
+        // strip any markdown fences
+        raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+
+        let result;
+        try { result = JSON.parse(raw); }
+        catch (e) {
+          // Attempt salvage: find first { ... }
+          const m = raw.match(/\{[\s\S]*\}/);
+          if (m) result = JSON.parse(m[0]);
+          else throw new Error('Could not parse AI response. The image may be too blurry or complex.');
+        }
+
+        // ── Render transcription ──
+        const displayText = settings.fixSpelling ? (result.corrected || result.original) : result.original;
+        const out = document.getElementById('transcription-out');
+        out.innerHTML = '';
+        const paragraphs = String(displayText).split(/\n\n+/);
+        paragraphs.forEach((para, i) => {
+          if (!para.trim()) return;
+          const p = document.createElement('p');
+          p.textContent = para.trim();
+          out.appendChild(p);
+        });
+
+        // ── Render analysis ──
+        if (settings.showAnalysis) {
+          renderSpelling(result.spelling_errors || []);
+          renderGrammar(result.grammar_issues || []);
+        }
+
+        const se = (result.spelling_errors || []).length;
+        const gi = (result.grammar_issues || []).length;
+        showStatus(`✓ Transcription complete — ${se} spelling issue${se !== 1 ? 's' : ''}, ${gi} grammar issue${gi !== 1 ? 's' : ''} found.`, 'success');
+
+      } catch (e) {
+        console.error(e);
+        showStatus('Error: ' + e.message, 'error');
+      } finally {
+        btn.disabled = !imageDataURL;
+        label.innerHTML = '✦ Transcribe Handwriting';
+      }
+    }
+
+    // ══ ANALYSIS RENDERERS ══
+    function renderSpelling(errors) {
+      const body = document.getElementById('spell-body');
+      const count = document.getElementById('spell-count');
+      count.textContent = errors.length;
+      if (!errors.length) {
+        body.innerHTML = '<div class="analysis-empty">✓ No spelling errors found!</div>'; return;
+      }
+      body.innerHTML = '';
+      errors.forEach((e, i) => {
+        const d = document.createElement('div');
+        d.className = 'issue-item spelling';
+        d.style.animationDelay = (i * 0.055) + 's';
+        d.innerHTML = `
+      <div class="issue-word">
+        <span class="wrong">${esc(e.wrong)}</span>
+        <span class="arrow">→</span>
+        <span class="right">${esc(e.correct)}</span>
+      </div>
+      <div class="issue-explain">${esc(e.note || '')}</div>`;
+        body.appendChild(d);
+      });
+    }
+
+    function renderGrammar(issues) {
+      const body = document.getElementById('grammar-body');
+      const count = document.getElementById('grammar-count');
+      count.textContent = issues.length;
+      if (!issues.length) {
+        body.innerHTML = '<div class="analysis-empty">✓ No grammar issues found!</div>'; return;
+      }
+      body.innerHTML = '';
+      issues.forEach((g, i) => {
+        const d = document.createElement('div');
+        d.className = 'issue-item grammar';
+        d.style.animationDelay = (i * 0.055) + 's';
+        d.innerHTML = `
+      <div class="issue-word">
+        <span class="wrong">${esc(g.original)}</span>
+        <span class="arrow">→</span>
+        <span class="right">${esc(g.corrected)}</span>
+      </div>
+      <div class="issue-explain">${esc(g.explanation || '')}</div>`;
+        body.appendChild(d);
+      });
+    }
+
+    function esc(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+
+    // ══ STATUS ══
+    function showStatus(msg, type) {
+      const bar = document.getElementById('status-bar');
+      bar.className = 'show ' + type;
+      bar.innerHTML = msg;
+    }
+    function clearStatus() {
+      const bar = document.getElementById('status-bar');
+      bar.className = '';
+      bar.innerHTML = '';
+    }
+
+    // ══ OUTPUT TOOLBAR ══
+    document.getElementById('copy-btn').addEventListener('click', () => {
+      const txt = document.getElementById('transcription-out').innerText;
+      if (!txt.trim()) { showStatus('Nothing to copy.', 'error'); return; }
+      navigator.clipboard.writeText(txt)
+        .then(() => showStatus('✓ Copied to clipboard!', 'success'))
+        .catch(() => showStatus('Copy failed — try manually selecting the text.', 'error'));
+    });
+
+    document.getElementById('download-btn').addEventListener('click', () => {
+      const txt = document.getElementById('transcription-out').innerText;
+      if (!txt.trim()) { showStatus('Nothing to save.', 'error'); return; }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([txt], { type: 'text/plain' }));
+      a.download = 'transcription_' + new Date().toISOString().slice(0, 10) + '.txt';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    });
+
+    document.getElementById('clear-out-btn').addEventListener('click', () => {
+      document.getElementById('transcription-out').innerHTML = '';
+      renderSpelling([]); renderGrammar([]);
+      clearStatus();
+    });
+
+    // ══ KEYBOARD SHORTCUT ══
+    document.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); transcribe(); }
+      if (e.key === 'Escape') closeSettings();
+    });
+  </script>
+</body>
+
+</html>
