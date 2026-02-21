@@ -523,31 +523,70 @@
       display: none;
     }
 
-    /* PREVIEW */
-    #preview-wrap {
-      display: none;
+    /* PREVIEW GALLERY */
+    #preview-gallery {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 1rem;
       margin-top: 1.2rem;
+      display: none;
     }
 
-    #preview-wrap.show {
-      display: block;
+    #preview-gallery.show {
+      display: grid;
     }
 
-    #preview-img {
-      width: 100%;
-      border-radius: 2px;
-      box-shadow: 0 2px 12px var(--shadow);
-      max-height: 320px;
-      object-fit: contain;
-      border: 1px solid var(--sepia-light);
+    .preview-item {
+      position: relative;
       background: var(--sepia-faint);
-      display: block;
+      border: 1px solid var(--sepia-light);
+      border-radius: 4px;
+      padding: 4px;
+      box-shadow: 0 2px 8px var(--shadow);
+      aspect-ratio: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    .preview-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 2px;
+    }
+
+    .remove-img-btn {
+      position: absolute;
+      top: -8px;
+      right: -8px;
+      width: 24px;
+      height: 24px;
+      background: var(--red-pen);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+      z-index: 2;
+      transition: transform 0.2s;
+    }
+
+    .remove-img-btn:hover {
+      transform: scale(1.1);
+      background: #d44;
     }
 
     .preview-actions {
       display: flex;
       gap: 0.6rem;
-      margin-top: 0.6rem;
+      margin-top: 1rem;
+      justify-content: center;
     }
 
     /* STATUS */
@@ -1001,10 +1040,10 @@
           <div class="panel-body">
 
             <div class="upload-zone" id="drop-zone">
-              <input type="file" id="file-input" accept="image/*">
+              <input type="file" id="file-input" accept="image/*" multiple>
               <span class="upload-icon">🖼</span>
-              <div class="upload-text">Drop image here or click to browse</div>
-              <div class="upload-sub">PNG · JPG · WEBP · HEIC</div>
+              <div class="upload-text">Drop images here or click to browse</div>
+              <div class="upload-sub">PNG · JPG · WEBP · HEIC (Multiple supported)</div>
             </div>
 
             <div class="or-divider">or</div>
@@ -1021,11 +1060,10 @@
               </div>
             </div>
 
-            <div id="preview-wrap">
-              <img id="preview-img" alt="Selected image preview">
+            <div id="preview-gallery"></div>
+            <div id="preview-actions-wrap" style="display: none;">
               <div class="preview-actions">
-                <button class="cam-btn secondary" id="clear-img-btn" style="flex:0;padding:0.5rem 1rem;">✕
-                  Remove</button>
+                <button class="cam-btn secondary" id="clear-all-btn">✕ Clear All</button>
               </div>
             </div>
 
@@ -1088,7 +1126,7 @@
 
   <script>
     // ══ STATE ══
-    let imageDataURL = null;
+    let imageItems = []; // Array of { id, dataURL, mimeType }
     let cameraStream = null;
     let facingMode = 'environment';
     let settings = {
@@ -1097,6 +1135,7 @@
     };
 
     // ══ LOAD / SAVE SETTINGS ══
+    // ... (loadSettings and saveSettings remain similar)
     function loadSettings() {
       try {
         const s = JSON.parse(localStorage.getItem('script_v2') || '{}');
@@ -1141,48 +1180,91 @@
       inp.type = inp.type === 'password' ? 'text' : 'password';
     });
 
-    // ══ FILE UPLOAD ══
+    // ══ IMAGE HANDLING ══
     const fileInput = document.getElementById('file-input');
     const dropZone = document.getElementById('drop-zone');
 
-    fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+    fileInput.addEventListener('change', e => {
+      if (e.target.files.length) {
+        Array.from(e.target.files).forEach(file => loadFile(file));
+        fileInput.value = ''; // Reset to allow same file again if needed
+      }
+    });
+
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
     dropZone.addEventListener('drop', e => {
       e.preventDefault(); dropZone.classList.remove('drag-over');
-      if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]);
+      if (e.dataTransfer.files.length) {
+        Array.from(e.dataTransfer.files).forEach(file => loadFile(file));
+      }
     });
 
     function loadFile(file) {
-      if (!file.type.startsWith('image/')) { showStatus('Please select an image file (PNG, JPG, WEBP).', 'error'); return; }
+      if (!file.type.startsWith('image/')) {
+        showStatus(`Skipped "${file.name}" — not an image.`, 'error');
+        return;
+      }
       const reader = new FileReader();
-      reader.onload = e => processAndSet(e.target.result);
+      reader.onload = e => processAndAdd(e.target.result, file.type);
       reader.readAsDataURL(file);
     }
 
-    function processAndSet(dataURL) {
+    function processAndAdd(dataURL, mimeType) {
       if (settings.enhance !== 'none') {
-        applyEnhancement(dataURL, settings.enhance, enhanced => setImage(enhanced));
+        applyEnhancement(dataURL, settings.enhance, enhanced => {
+          addImage(enhanced, mimeType);
+        });
       } else {
-        setImage(dataURL);
+        addImage(dataURL, mimeType);
       }
     }
 
-    function setImage(dataURL) {
-      imageDataURL = dataURL;
-      document.getElementById('preview-img').src = dataURL;
-      document.getElementById('preview-wrap').classList.add('show');
-      document.getElementById('transcribe-btn').disabled = false;
+    function addImage(dataURL, mimeType) {
+      const id = Date.now() + Math.random().toString(36).substr(2, 9);
+      imageItems.push({ id, dataURL, mimeType });
+      renderGallery();
       hideCamera();
       clearStatus();
     }
 
-    document.getElementById('clear-img-btn').addEventListener('click', () => {
-      imageDataURL = null;
-      document.getElementById('preview-wrap').classList.remove('show');
-      document.getElementById('preview-img').src = '';
-      document.getElementById('transcribe-btn').disabled = true;
-      fileInput.value = '';
+    function renderGallery() {
+      const gallery = document.getElementById('preview-gallery');
+      const actions = document.getElementById('preview-actions-wrap');
+      const btn = document.getElementById('transcribe-btn');
+
+      gallery.innerHTML = '';
+
+      if (imageItems.length === 0) {
+        gallery.classList.remove('show');
+        actions.style.display = 'none';
+        btn.disabled = true;
+        return;
+      }
+
+      gallery.classList.add('show');
+      actions.style.display = 'block';
+      btn.disabled = false;
+
+      imageItems.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'preview-item';
+        div.innerHTML = `
+          <img src="${item.dataURL}" alt="Preview">
+          <button class="remove-img-btn" onclick="removeImage('${item.id}')" title="Remove">&times;</button>
+        `;
+        gallery.appendChild(div);
+      });
+    }
+
+    window.removeImage = function (id) {
+      imageItems = imageItems.filter(item => item.id !== id);
+      renderGallery();
+    };
+
+    document.getElementById('clear-all-btn').addEventListener('click', () => {
+      imageItems = [];
+      renderGallery();
       clearStatus();
     });
 
@@ -1266,7 +1348,7 @@
     document.getElementById('transcribe-btn').addEventListener('click', transcribe);
 
     async function transcribe() {
-      if (!imageDataURL) { showStatus('Please select or capture an image first.', 'error'); return; }
+      if (imageItems.length === 0) { showStatus('Please select or capture at least one image first.', 'error'); return; }
       if (!settings.apiKey) {
         showStatus('API key missing — open Settings (☰) and paste your Gemini API key.', 'error');
         openSettings(); return;
@@ -1276,11 +1358,15 @@
       const label = document.getElementById('transcribe-label');
       btn.disabled = true;
       label.innerHTML = '<span class="spinner"></span>Transcribing…';
-      showStatus('Sending image to Gemini AI…', 'loading');
+      showStatus(`Sending ${imageItems.length} image${imageItems.length !== 1 ? 's' : ''} to Gemini AI…`, 'loading');
 
       try {
-        const base64 = imageDataURL.split(',')[1];
-        const mimeType = imageDataURL.match(/data:(.*?);/)[1];
+        const imageParts = imageItems.map(item => ({
+          inline_data: {
+            mime_type: item.mimeType,
+            data: item.dataURL.split(',')[1]
+          }
+        }));
 
         const langNote = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
         const paraNote = settings.keepParagraphs
@@ -1292,9 +1378,9 @@
 
         const prompt = `You are an expert handwriting OCR and proofreading assistant.
 
-Carefully read the handwritten text in the image and do the following:
+Carefully read the handwritten text in the provided images and do the following:
 
-1. TRANSCRIPTION: Transcribe every word exactly as written. ${langNote}
+1. TRANSCRIPTION: Transcribe every word exactly as written across all images in order. ${langNote}
 2. PARAGRAPHS: ${paraNote}
 3. SPELLING: ${spellNote}
 4. GRAMMAR: In "grammar_issues", identify every grammatical error — subject-verb agreement, wrong tense, missing articles, punctuation, sentence structure, etc. For each, provide: original fragment, corrected version, and a clear explanation.
@@ -1319,7 +1405,7 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
             body: JSON.stringify({
               contents: [{
                 parts: [
-                  { inline_data: { mime_type: mimeType, data: base64 } },
+                  ...imageParts,
                   { text: prompt }
                 ]
               }],
@@ -1339,7 +1425,7 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
 
         const data = await resp.json();
         let raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!raw) throw new Error('Gemini returned an empty response. Try a clearer image.');
+        if (!raw) throw new Error('Gemini returned an empty response. Try clearer images.');
 
         // strip any markdown fences
         raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
@@ -1350,7 +1436,7 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
           // Attempt salvage: find first { ... }
           const m = raw.match(/\{[\s\S]*\}/);
           if (m) result = JSON.parse(m[0]);
-          else throw new Error('Could not parse AI response. The image may be too blurry or complex.');
+          else throw new Error('Could not parse AI response. The images may be too blurry or complex.');
         }
 
         // ── Render transcription ──
@@ -1379,7 +1465,7 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
         console.error(e);
         showStatus('Error: ' + e.message, 'error');
       } finally {
-        btn.disabled = !imageDataURL;
+        btn.disabled = imageItems.length === 0;
         label.innerHTML = '✦ Transcribe Handwriting';
       }
     }
