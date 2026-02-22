@@ -444,81 +444,6 @@
       opacity: 0.4;
     }
 
-    /* CAMERA */
-    #camera-section {
-      display: none;
-      margin-top: 0;
-    }
-
-    #camera-section.active {
-      display: block;
-    }
-
-    #camera-video {
-      width: 100%;
-      border-radius: 2px;
-      max-height: 280px;
-      object-fit: cover;
-      background: #111;
-      display: block;
-    }
-
-    .camera-controls {
-      display: flex;
-      gap: 0.6rem;
-      margin-top: 0.6rem;
-      flex-wrap: wrap;
-    }
-
-    .cam-btn {
-      flex: 1;
-      padding: 0.6rem 0.8rem;
-      border: none;
-      border-radius: 2px;
-      font-family: 'Crimson Pro', serif;
-      font-size: 0.95rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      white-space: nowrap;
-    }
-
-    .cam-btn.primary {
-      background: var(--ink);
-      color: var(--paper);
-    }
-
-    .cam-btn.primary:hover {
-      background: var(--sepia);
-    }
-
-    .cam-btn.secondary {
-      background: var(--paper-dark);
-      color: var(--ink);
-      border: 1px solid var(--sepia-light);
-    }
-
-    .cam-btn.secondary:hover {
-      background: var(--sepia-faint);
-    }
-
-    .open-camera-btn {
-      width: 100%;
-      padding: 0.8rem;
-      background: var(--ink);
-      color: var(--paper);
-      border: none;
-      border-radius: 2px;
-      font-family: 'Playfair Display', serif;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      letter-spacing: 0.02em;
-    }
-
-    .open-camera-btn:hover {
-      background: var(--sepia);
-    }
-
     #snap-canvas {
       display: none;
     }
@@ -1046,20 +971,6 @@
               <div class="upload-sub">PNG · JPG · WEBP · HEIC (Multiple supported)</div>
             </div>
 
-            <div class="or-divider">or</div>
-
-            <button class="open-camera-btn" id="open-camera-btn">📷 Open Camera</button>
-
-            <div id="camera-section">
-              <video id="camera-video" autoplay muted playsinline></video>
-              <canvas id="snap-canvas"></canvas>
-              <div class="camera-controls">
-                <button class="cam-btn primary" id="snap-btn">📸 Capture Photo</button>
-                <button class="cam-btn secondary" id="switch-cam-btn">🔄 Flip</button>
-                <button class="cam-btn secondary" id="close-cam-btn">✕ Close</button>
-              </div>
-            </div>
-
             <div id="preview-gallery"></div>
             <div id="preview-actions-wrap" style="display: none;">
               <div class="preview-actions">
@@ -1127,8 +1038,6 @@
   <script>
     // ══ STATE ══
     let imageItems = []; // Array of { id, dataURL, mimeType }
-    let cameraStream = null;
-    let facingMode = 'environment';
     let settings = {
       apiKey: '', model: 'gemini-2.0-flash', lang: 'auto',
       fixSpelling: true, keepParagraphs: true, showAnalysis: true, enhance: 'none'
@@ -1224,7 +1133,6 @@
       const id = Date.now() + Math.random().toString(36).substr(2, 9);
       imageItems.push({ id, dataURL, mimeType });
       renderGallery();
-      hideCamera();
       clearStatus();
     }
 
@@ -1267,53 +1175,6 @@
       renderGallery();
       clearStatus();
     });
-
-    // ══ CAMERA ══
-    document.getElementById('open-camera-btn').addEventListener('click', openCamera);
-    document.getElementById('close-cam-btn').addEventListener('click', hideCamera);
-    document.getElementById('snap-btn').addEventListener('click', snapPhoto);
-    document.getElementById('switch-cam-btn').addEventListener('click', () => {
-      facingMode = facingMode === 'environment' ? 'user' : 'environment';
-      stopCamera(); startCamera();
-    });
-
-    async function openCamera() {
-      document.getElementById('camera-section').classList.add('active');
-      document.getElementById('open-camera-btn').style.display = 'none';
-      await startCamera();
-    }
-
-    async function startCamera() {
-      try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
-        });
-        document.getElementById('camera-video').srcObject = cameraStream;
-      } catch (e) {
-        showStatus('Camera access denied. Please allow camera permission in your browser.', 'error');
-        hideCamera();
-      }
-    }
-
-    function stopCamera() {
-      if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
-    }
-
-    function hideCamera() {
-      stopCamera();
-      document.getElementById('camera-section').classList.remove('active');
-      document.getElementById('open-camera-btn').style.display = '';
-    }
-
-    function snapPhoto() {
-      const video = document.getElementById('camera-video');
-      const canvas = document.getElementById('snap-canvas');
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-      canvas.getContext('2d').drawImage(video, 0, 0);
-      const dataURL = canvas.toDataURL('image/jpeg', 0.95);
-      processAndAdd(dataURL, 'image/jpeg');
-    }
 
     // ══ ENHANCE ══
     function applyEnhancement(dataURL, mode, cb) {
