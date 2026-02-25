@@ -1093,37 +1093,48 @@
     const fileInput = document.getElementById('file-input');
     const dropZone = document.getElementById('drop-zone');
 
-    fileInput.addEventListener('change', e => {
+    fileInput.addEventListener('change', async e => {
       if (e.target.files.length) {
-        Array.from(e.target.files).forEach(file => loadFile(file));
+        const files = Array.from(e.target.files);
+        for (const file of files) {
+          await loadFile(file);
+        }
         fileInput.value = ''; // Reset to allow same file again if needed
       }
     });
 
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
+    dropZone.addEventListener('drop', async e => {
       e.preventDefault(); dropZone.classList.remove('drag-over');
       if (e.dataTransfer.files.length) {
-        Array.from(e.dataTransfer.files).forEach(file => loadFile(file));
+        const files = Array.from(e.dataTransfer.files);
+        for (const file of files) {
+          await loadFile(file);
+        }
       }
     });
 
     function loadFile(file) {
-      if (!file.type.startsWith('image/')) {
-        showStatus(`Skipped "${file.name}" — not an image.`, 'error');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = e => processAndAdd(e.target.result, file.type);
-      reader.readAsDataURL(file);
+      return new Promise((resolve) => {
+        if (!file.type.startsWith('image/')) {
+          showStatus(`Skipped "${file.name}" — not an image.`, 'error');
+          resolve();
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = async e => {
+          await processAndAdd(e.target.result, file.type);
+          resolve();
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
-    function processAndAdd(dataURL, mimeType) {
+    async function processAndAdd(dataURL, mimeType) {
       if (settings.enhance !== 'none') {
-        applyEnhancement(dataURL, settings.enhance, enhanced => {
-          addImage(enhanced, mimeType);
-        });
+        const enhanced = await applyEnhancement(dataURL, settings.enhance);
+        addImage(enhanced, mimeType);
       } else {
         addImage(dataURL, mimeType);
       }
@@ -1154,11 +1165,12 @@
       actions.style.display = 'block';
       btn.disabled = false;
 
-      imageItems.forEach(item => {
+      imageItems.forEach((item, index) => {
         const div = document.createElement('div');
         div.className = 'preview-item';
         div.innerHTML = `
           <img src="${item.dataURL}" alt="Preview">
+          <div style="position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;">Page ${index + 1}</div>
           <button class="remove-img-btn" onclick="removeImage('${item.id}')" title="Remove">&times;</button>
         `;
         gallery.appendChild(div);
@@ -1177,31 +1189,33 @@
     });
 
     // ══ ENHANCE ══
-    function applyEnhancement(dataURL, mode, cb) {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = img.width; c.height = img.height;
-        const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const id = ctx.getImageData(0, 0, c.width, c.height);
-        const d = id.data;
-        for (let i = 0; i < d.length; i += 4) {
-          if (mode === 'grayscale' || mode === 'sharpen') {
-            const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-            d[i] = d[i + 1] = d[i + 2] = g;
+    function applyEnhancement(dataURL, mode) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const id = ctx.getImageData(0, 0, c.width, c.height);
+          const d = id.data;
+          for (let i = 0; i < d.length; i += 4) {
+            if (mode === 'grayscale' || mode === 'sharpen') {
+              const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              d[i] = d[i + 1] = d[i + 2] = g;
+            }
+            if (mode === 'contrast') {
+              const f = 1.45;
+              d[i] = clamp(f * (d[i] - 128) + 128);
+              d[i + 1] = clamp(f * (d[i + 1] - 128) + 128);
+              d[i + 2] = clamp(f * (d[i + 2] - 128) + 128);
+            }
           }
-          if (mode === 'contrast') {
-            const f = 1.45;
-            d[i] = clamp(f * (d[i] - 128) + 128);
-            d[i + 1] = clamp(f * (d[i + 1] - 128) + 128);
-            d[i + 2] = clamp(f * (d[i + 2] - 128) + 128);
-          }
-        }
-        ctx.putImageData(id, 0, 0);
-        cb(c.toDataURL('image/jpeg', 0.92));
-      };
-      img.src = dataURL;
+          ctx.putImageData(id, 0, 0);
+          resolve(c.toDataURL('image/jpeg', 0.92));
+        };
+        img.src = dataURL;
+      });
     }
     const clamp = v => Math.min(255, Math.max(0, v));
 
