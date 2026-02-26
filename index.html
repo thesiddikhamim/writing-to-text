@@ -1233,39 +1233,57 @@
       const label = document.getElementById('transcribe-label');
       btn.disabled = true;
       label.innerHTML = '<span class="spinner"></span>Transcribing…';
-      showStatus(`Sending ${imageItems.length} image${imageItems.length !== 1 ? 's' : ''} to Gemini AI…`, 'loading');
+
+      const batchSize = 3;
+      const totalImages = imageItems.length;
+      const batches = [];
+      for (let i = 0; i < totalImages; i += batchSize) {
+        batches.push(imageItems.slice(i, i + batchSize));
+      }
+
+      const finalResult = {
+        original: '',
+        corrected: '',
+        spelling_errors: [],
+        grammar_issues: []
+      };
 
       try {
-        const imageParts = imageItems.map(item => ({
-          inline_data: {
-            mime_type: item.mimeType,
-            data: item.dataURL.split(',')[1]
-          }
-        }));
+        for (let i = 0; i < batches.length; i++) {
+          const currentBatchIndices = Array.from({ length: batches[i].length }, (_, k) => i * batchSize + k + 1);
+          showStatus(`Transcribing batch ${i + 1} of ${batches.length} (Pages ${currentBatchIndices.join(', ')})...`, 'loading');
 
-        const langNote = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
-        const paraNote = settings.keepParagraphs
-          ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
-          : 'Transcribe as a single continuous block of text.';
-        const spellNote = settings.fixSpelling
-          ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
-          : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
+          const imageParts = batches[i].map(item => ({
+            inline_data: {
+              mime_type: item.mimeType,
+              data: item.dataURL.split(',')[1]
+            }
+          }));
 
-        const prompt = `You are an expert handwriting OCR and proofreading assistant.
+          const langNote = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
+          const paraNote = settings.keepParagraphs
+            ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
+            : 'Transcribe as a single continuous block of text.';
+          const spellNote = settings.fixSpelling
+            ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
+            : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
 
-I have provided ${imageItems.length} image(s) containing handwritten text. They are provided in sequential order.
+          const prompt = `You are an expert handwriting OCR and proofreading assistant.
 
-Carefully read the handwritten text in ALL ${imageItems.length} provided images and do the following :
+I have provided ${batches[i].length} image(s) containing handwritten text. They are provided in sequential order. 
+These are pages ${currentBatchIndices.join(', ')} of a larger document.
 
-1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: You must transcribe all images in the order they are provided (Image 1, then Image 2, etc.). Do not skip any image. The final output should be a single unified transcription containing the text from ALL images combined in order. ${langNote}
+Carefully read the handwritten text in ALL ${batches[i].length} provided images and do the following :
+
+1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: You must transcribe all images in the order they are provided. Do not skip any image. The final output for this batch should be a single unified transcription containing the text from ALL images in this batch combined in order. ${langNote}
 2. PARAGRAPHS: ${paraNote}
 3. SPELLING: ${spellNote}
-4. GRAMMAR: In "grammar_issues", identify every grammatical error — subject-verb agreement, wrong tense, missing articles, punctuation, sentence structure, etc. For each, provide: original fragment, corrected version, and a clear explanation.
+4. GRAMMAR: In "grammar_issues", identify every grammatical error. For each, provide: original fragment, corrected version, and a clear explanation.
 
 Return ONLY a valid JSON object — no markdown fences, no extra text — matching this exact schema:
 {
-  "original": "<verbatim transcription of ALL images, paragraphs split by \\n\\n>",
-  "corrected": "<corrected transcription of ALL images with spelling fixed, paragraphs split by \\n\\n>",
+  "original": "<verbatim transcription of THIS batch, paragraphs split by \\n\\n>",
+  "corrected": "<corrected transcription of THIS batch with spelling fixed, paragraphs split by \\n\\n>",
   "spelling_errors": [
     { "wrong": "...", "correct": "...", "note": "brief explanation" }
   ],
@@ -1274,50 +1292,51 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
   ]
 }`;
 
-        const resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  ...imageParts,
-                  { text: prompt }
-                ]
-              }],
-              generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
-            })
+          const resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    ...imageParts,
+                    { text: prompt }
+                  ]
+                }],
+                generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
+              })
+            }
+          );
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            const msg = err.error?.message || `HTTP ${resp.status}`;
+            throw new Error(`Batch ${i + 1} failed: ${msg}`);
           }
-        );
 
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          const msg = err.error?.message || `HTTP ${resp.status}`;
-          if (resp.status === 400) throw new Error('Invalid request — check your image format or API key.');
-          if (resp.status === 403) throw new Error('API key invalid or quota exceeded. Check your Gemini API key.');
-          if (resp.status === 429) throw new Error('Rate limit hit. Wait a moment and try again.');
-          throw new Error(msg);
-        }
+          const data = await resp.json();
+          let raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!raw) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
 
-        const data = await resp.json();
-        let raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!raw) throw new Error('Gemini returned an empty response. Try clearer images.');
+          raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+          let result;
+          try { result = JSON.parse(raw); }
+          catch (e) {
+            const m = raw.match(/\{[\s\S]*\}/);
+            if (m) result = JSON.parse(m[0]);
+            else throw new Error(`Could not parse AI response for batch ${i + 1}.`);
+          }
 
-        // strip any markdown fences
-        raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-
-        let result;
-        try { result = JSON.parse(raw); }
-        catch (e) {
-          // Attempt salvage: find first { ... }
-          const m = raw.match(/\{[\s\S]*\}/);
-          if (m) result = JSON.parse(m[0]);
-          else throw new Error('Could not parse AI response. The images may be too blurry or complex.');
+          // Merge results
+          finalResult.original += (finalResult.original ? '\n\n' : '') + result.original;
+          finalResult.corrected += (finalResult.corrected ? '\n\n' : '') + result.corrected;
+          if (result.spelling_errors) finalResult.spelling_errors.push(...result.spelling_errors);
+          if (result.grammar_issues) finalResult.grammar_issues.push(...result.grammar_issues);
         }
 
         // ── Render transcription ──
-        const displayText = settings.fixSpelling ? (result.corrected || result.original) : result.original;
+        const displayText = settings.fixSpelling ? (finalResult.corrected || finalResult.original) : finalResult.original;
         const out = document.getElementById('transcription-out');
         out.innerHTML = '';
         const paragraphs = String(displayText).split(/\n\n+/);
@@ -1330,13 +1349,13 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
 
         // ── Render analysis ──
         if (settings.showAnalysis) {
-          renderSpelling(result.spelling_errors || []);
-          renderGrammar(result.grammar_issues || []);
+          renderSpelling(finalResult.spelling_errors || []);
+          renderGrammar(finalResult.grammar_issues || []);
         }
 
-        const se = (result.spelling_errors || []).length;
-        const gi = (result.grammar_issues || []).length;
-        showStatus(`✓ Transcription complete — ${se} spelling issue${se !== 1 ? 's' : ''}, ${gi} grammar issue${gi !== 1 ? 's' : ''} found.`, 'success');
+        const se = finalResult.spelling_errors.length;
+        const gi = finalResult.grammar_issues.length;
+        showStatus(`✓ Transcription complete — Total ${totalImages} images processed in ${batches.length} batches. ${se} spelling issues, ${gi} grammar issues found.`, 'success');
 
       } catch (e) {
         console.error(e);
