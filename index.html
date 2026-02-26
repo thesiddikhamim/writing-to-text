@@ -444,81 +444,6 @@
       opacity: 0.4;
     }
 
-    /* CAMERA */
-    #camera-section {
-      display: none;
-      margin-top: 0;
-    }
-
-    #camera-section.active {
-      display: block;
-    }
-
-    #camera-video {
-      width: 100%;
-      border-radius: 2px;
-      max-height: 280px;
-      object-fit: cover;
-      background: #111;
-      display: block;
-    }
-
-    .camera-controls {
-      display: flex;
-      gap: 0.6rem;
-      margin-top: 0.6rem;
-      flex-wrap: wrap;
-    }
-
-    .cam-btn {
-      flex: 1;
-      padding: 0.6rem 0.8rem;
-      border: none;
-      border-radius: 2px;
-      font-family: 'Crimson Pro', serif;
-      font-size: 0.95rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      white-space: nowrap;
-    }
-
-    .cam-btn.primary {
-      background: var(--ink);
-      color: var(--paper);
-    }
-
-    .cam-btn.primary:hover {
-      background: var(--sepia);
-    }
-
-    .cam-btn.secondary {
-      background: var(--paper-dark);
-      color: var(--ink);
-      border: 1px solid var(--sepia-light);
-    }
-
-    .cam-btn.secondary:hover {
-      background: var(--sepia-faint);
-    }
-
-    .open-camera-btn {
-      width: 100%;
-      padding: 0.8rem;
-      background: var(--ink);
-      color: var(--paper);
-      border: none;
-      border-radius: 2px;
-      font-family: 'Playfair Display', serif;
-      font-size: 1rem;
-      cursor: pointer;
-      transition: all 0.2s;
-      letter-spacing: 0.02em;
-    }
-
-    .open-camera-btn:hover {
-      background: var(--sepia);
-    }
-
     #snap-canvas {
       display: none;
     }
@@ -1046,20 +971,6 @@
               <div class="upload-sub">PNG · JPG · WEBP · HEIC (Multiple supported)</div>
             </div>
 
-            <div class="or-divider">or</div>
-
-            <button class="open-camera-btn" id="open-camera-btn">📷 Open Camera</button>
-
-            <div id="camera-section">
-              <video id="camera-video" autoplay muted playsinline></video>
-              <canvas id="snap-canvas"></canvas>
-              <div class="camera-controls">
-                <button class="cam-btn primary" id="snap-btn">📸 Capture Photo</button>
-                <button class="cam-btn secondary" id="switch-cam-btn">🔄 Flip</button>
-                <button class="cam-btn secondary" id="close-cam-btn">✕ Close</button>
-              </div>
-            </div>
-
             <div id="preview-gallery"></div>
             <div id="preview-actions-wrap" style="display: none;">
               <div class="preview-actions">
@@ -1127,8 +1038,6 @@
   <script>
     // ══ STATE ══
     let imageItems = []; // Array of { id, dataURL, mimeType }
-    let cameraStream = null;
-    let facingMode = 'environment';
     let settings = {
       apiKey: '', model: 'gemini-2.0-flash', lang: 'auto',
       fixSpelling: true, keepParagraphs: true, showAnalysis: true, enhance: 'none'
@@ -1184,37 +1093,48 @@
     const fileInput = document.getElementById('file-input');
     const dropZone = document.getElementById('drop-zone');
 
-    fileInput.addEventListener('change', e => {
+    fileInput.addEventListener('change', async e => {
       if (e.target.files.length) {
-        Array.from(e.target.files).forEach(file => loadFile(file));
+        const files = Array.from(e.target.files);
+        for (const file of files) {
+          await loadFile(file);
+        }
         fileInput.value = ''; // Reset to allow same file again if needed
       }
     });
 
     dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
+    dropZone.addEventListener('drop', async e => {
       e.preventDefault(); dropZone.classList.remove('drag-over');
       if (e.dataTransfer.files.length) {
-        Array.from(e.dataTransfer.files).forEach(file => loadFile(file));
+        const files = Array.from(e.dataTransfer.files);
+        for (const file of files) {
+          await loadFile(file);
+        }
       }
     });
 
     function loadFile(file) {
-      if (!file.type.startsWith('image/')) {
-        showStatus(`Skipped "${file.name}" — not an image.`, 'error');
-        return;
-      }
-      const reader = new FileReader();
-      reader.onload = e => processAndAdd(e.target.result, file.type);
-      reader.readAsDataURL(file);
+      return new Promise((resolve) => {
+        if (!file.type.startsWith('image/')) {
+          showStatus(`Skipped "${file.name}" — not an image.`, 'error');
+          resolve();
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = async e => {
+          await processAndAdd(e.target.result, file.type);
+          resolve();
+        };
+        reader.readAsDataURL(file);
+      });
     }
 
-    function processAndAdd(dataURL, mimeType) {
+    async function processAndAdd(dataURL, mimeType) {
       if (settings.enhance !== 'none') {
-        applyEnhancement(dataURL, settings.enhance, enhanced => {
-          addImage(enhanced, mimeType);
-        });
+        const enhanced = await applyEnhancement(dataURL, settings.enhance);
+        addImage(enhanced, mimeType);
       } else {
         addImage(dataURL, mimeType);
       }
@@ -1224,7 +1144,6 @@
       const id = Date.now() + Math.random().toString(36).substr(2, 9);
       imageItems.push({ id, dataURL, mimeType });
       renderGallery();
-      hideCamera();
       clearStatus();
     }
 
@@ -1246,11 +1165,12 @@
       actions.style.display = 'block';
       btn.disabled = false;
 
-      imageItems.forEach(item => {
+      imageItems.forEach((item, index) => {
         const div = document.createElement('div');
         div.className = 'preview-item';
         div.innerHTML = `
           <img src="${item.dataURL}" alt="Preview">
+          <div style="position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;">Page ${index + 1}</div>
           <button class="remove-img-btn" onclick="removeImage('${item.id}')" title="Remove">&times;</button>
         `;
         gallery.appendChild(div);
@@ -1268,79 +1188,34 @@
       clearStatus();
     });
 
-    // ══ CAMERA ══
-    document.getElementById('open-camera-btn').addEventListener('click', openCamera);
-    document.getElementById('close-cam-btn').addEventListener('click', hideCamera);
-    document.getElementById('snap-btn').addEventListener('click', snapPhoto);
-    document.getElementById('switch-cam-btn').addEventListener('click', () => {
-      facingMode = facingMode === 'environment' ? 'user' : 'environment';
-      stopCamera(); startCamera();
-    });
-
-    async function openCamera() {
-      document.getElementById('camera-section').classList.add('active');
-      document.getElementById('open-camera-btn').style.display = 'none';
-      await startCamera();
-    }
-
-    async function startCamera() {
-      try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode, width: { ideal: 1920 }, height: { ideal: 1080 } }
-        });
-        document.getElementById('camera-video').srcObject = cameraStream;
-      } catch (e) {
-        showStatus('Camera access denied. Please allow camera permission in your browser.', 'error');
-        hideCamera();
-      }
-    }
-
-    function stopCamera() {
-      if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
-    }
-
-    function hideCamera() {
-      stopCamera();
-      document.getElementById('camera-section').classList.remove('active');
-      document.getElementById('open-camera-btn').style.display = '';
-    }
-
-    function snapPhoto() {
-      const video = document.getElementById('camera-video');
-      const canvas = document.getElementById('snap-canvas');
-      canvas.width = video.videoWidth || 1280;
-      canvas.height = video.videoHeight || 720;
-      canvas.getContext('2d').drawImage(video, 0, 0);
-      const dataURL = canvas.toDataURL('image/jpeg', 0.95);
-      processAndAdd(dataURL, 'image/jpeg');
-    }
-
     // ══ ENHANCE ══
-    function applyEnhancement(dataURL, mode, cb) {
-      const img = new Image();
-      img.onload = () => {
-        const c = document.createElement('canvas');
-        c.width = img.width; c.height = img.height;
-        const ctx = c.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        const id = ctx.getImageData(0, 0, c.width, c.height);
-        const d = id.data;
-        for (let i = 0; i < d.length; i += 4) {
-          if (mode === 'grayscale' || mode === 'sharpen') {
-            const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
-            d[i] = d[i + 1] = d[i + 2] = g;
+    function applyEnhancement(dataURL, mode) {
+      return new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+          const c = document.createElement('canvas');
+          c.width = img.width; c.height = img.height;
+          const ctx = c.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          const id = ctx.getImageData(0, 0, c.width, c.height);
+          const d = id.data;
+          for (let i = 0; i < d.length; i += 4) {
+            if (mode === 'grayscale' || mode === 'sharpen') {
+              const g = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+              d[i] = d[i + 1] = d[i + 2] = g;
+            }
+            if (mode === 'contrast') {
+              const f = 1.45;
+              d[i] = clamp(f * (d[i] - 128) + 128);
+              d[i + 1] = clamp(f * (d[i + 1] - 128) + 128);
+              d[i + 2] = clamp(f * (d[i + 2] - 128) + 128);
+            }
           }
-          if (mode === 'contrast') {
-            const f = 1.45;
-            d[i] = clamp(f * (d[i] - 128) + 128);
-            d[i + 1] = clamp(f * (d[i + 1] - 128) + 128);
-            d[i + 2] = clamp(f * (d[i + 2] - 128) + 128);
-          }
-        }
-        ctx.putImageData(id, 0, 0);
-        cb(c.toDataURL('image/jpeg', 0.92));
-      };
-      img.src = dataURL;
+          ctx.putImageData(id, 0, 0);
+          resolve(c.toDataURL('image/jpeg', 0.92));
+        };
+        img.src = dataURL;
+      });
     }
     const clamp = v => Math.min(255, Math.max(0, v));
 
@@ -1358,91 +1233,135 @@
       const label = document.getElementById('transcribe-label');
       btn.disabled = true;
       label.innerHTML = '<span class="spinner"></span>Transcribing…';
-      showStatus(`Sending ${imageItems.length} image${imageItems.length !== 1 ? 's' : ''} to Gemini AI…`, 'loading');
+
+      const batchSize = 3;
+      const totalImages = imageItems.length;
+      const batches = [];
+      for (let i = 0; i < totalImages; i += batchSize) {
+        batches.push(imageItems.slice(i, i + batchSize));
+      }
+
+      const finalResult = {
+        original: '',
+        corrected: '',
+        spelling_errors: [],
+        grammar_issues: []
+      };
 
       try {
-        const imageParts = imageItems.map(item => ({
-          inline_data: {
-            mime_type: item.mimeType,
-            data: item.dataURL.split(',')[1]
-          }
-        }));
+        for (let i = 0; i < batches.length; i++) {
+          const currentBatchIndices = Array.from({ length: batches[i].length }, (_, k) => i * batchSize + k + 1);
+          showStatus(`Transcribing batch ${i + 1} of ${batches.length} (Pages ${currentBatchIndices.join(', ')})...`, 'loading');
 
-        const langNote = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
-        const paraNote = settings.keepParagraphs
-          ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
-          : 'Transcribe as a single continuous block of text.';
-        const spellNote = settings.fixSpelling
-          ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
-          : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
+          const imageParts = batches[i].map(item => ({
+            inline_data: {
+              mime_type: item.mimeType,
+              data: item.dataURL.split(',')[1]
+            }
+          }));
 
-        const prompt = `You are an expert handwriting OCR and proofreading assistant.
+          const langNote = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
+          const paraNote = settings.keepParagraphs
+            ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
+            : 'Transcribe as a single continuous block of text.';
+          const spellNote = settings.fixSpelling
+            ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
+            : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
 
-I have provided ${imageItems.length} image(s) containing handwritten text. They are provided in sequential order.
+          const prompt = `You are an expert handwriting OCR and proofreading assistant.
 
-Carefully read the handwritten text in ALL ${imageItems.length} provided images and do the following :
+I have provided ${batches[i].length} image(s) containing handwritten text. They are provided in sequential order. 
+These are pages ${currentBatchIndices.join(', ')} of a larger document.
 
-1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: You must transcribe all images in the order they are provided (Image 1, then Image 2, etc.). Do not skip any image. The final output should be a single unified transcription containing the text from ALL images combined in order. ${langNote}
+Carefully read the handwritten text in ALL ${batches[i].length} provided images and do the following:
+
+1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: Transcribe all images in the order they are provided. Do not skip any image. Combine the transcription for this batch into a single unified text. ${langNote}
 2. PARAGRAPHS: ${paraNote}
 3. SPELLING: ${spellNote}
-4. GRAMMAR: In "grammar_issues", identify every grammatical error — subject-verb agreement, wrong tense, missing articles, punctuation, sentence structure, etc. For each, provide: original fragment, corrected version, and a clear explanation.
+4. GRAMMAR: Identify every grammatical error in the transcription.
 
-Return ONLY a valid JSON object — no markdown fences, no extra text — matching this exact schema:
-{
-  "original": "<verbatim transcription of ALL images, paragraphs split by \\n\\n>",
-  "corrected": "<corrected transcription of ALL images with spelling fixed, paragraphs split by \\n\\n>",
-  "spelling_errors": [
-    { "wrong": "...", "correct": "...", "note": "brief explanation" }
-  ],
-  "grammar_issues": [
-    { "original": "...", "corrected": "...", "explanation": "clear explanation of the error" }
-  ]
-}`;
+Return the result as a JSON object matching the requested schema.`;
 
-        const resp = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{
-                parts: [
-                  ...imageParts,
-                  { text: prompt }
-                ]
-              }],
-              generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
-            })
+          const resp = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{
+                  parts: [
+                    ...imageParts,
+                    { text: prompt }
+                  ]
+                }],
+                generationConfig: {
+                  temperature: 0.1,
+                  maxOutputTokens: 8192,
+                  response_mime_type: "application/json",
+                  response_schema: {
+                    type: "OBJECT",
+                    properties: {
+                      original: { type: "STRING" },
+                      corrected: { type: "STRING" },
+                      spelling_errors: {
+                        type: "ARRAY",
+                        items: {
+                          type: "OBJECT",
+                          properties: {
+                            wrong: { type: "STRING" },
+                            correct: { type: "STRING" },
+                            note: { type: "STRING" }
+                          },
+                          required: ["wrong", "correct", "note"]
+                        }
+                      },
+                      grammar_issues: {
+                        type: "ARRAY",
+                        items: {
+                          type: "OBJECT",
+                          properties: {
+                            original: { type: "STRING" },
+                            corrected: { type: "STRING" },
+                            explanation: { type: "STRING" }
+                          },
+                          required: ["original", "corrected", "explanation"]
+                        }
+                      }
+                    },
+                    required: ["original", "corrected", "spelling_errors", "grammar_issues"]
+                  }
+                }
+              })
+            }
+          );
+
+          if (!resp.ok) {
+            const err = await resp.json().catch(() => ({}));
+            const msg = err.error?.message || `HTTP ${resp.status}`;
+            throw new Error(`Batch ${i + 1} failed: ${msg}`);
           }
-        );
 
-        if (!resp.ok) {
-          const err = await resp.json().catch(() => ({}));
-          const msg = err.error?.message || `HTTP ${resp.status}`;
-          if (resp.status === 400) throw new Error('Invalid request — check your image format or API key.');
-          if (resp.status === 403) throw new Error('API key invalid or quota exceeded. Check your Gemini API key.');
-          if (resp.status === 429) throw new Error('Rate limit hit. Wait a moment and try again.');
-          throw new Error(msg);
-        }
+          const data = await resp.json();
+          const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (!raw) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
 
-        const data = await resp.json();
-        let raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (!raw) throw new Error('Gemini returned an empty response. Try clearer images.');
+          let result;
+          try {
+            result = JSON.parse(raw);
+          } catch (e) {
+            console.error("Parse error on raw text:", raw);
+            throw new Error(`Could not parse AI response for batch ${i + 1}. JSON mode was active but parsing failed.`);
+          }
 
-        // strip any markdown fences
-        raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
-
-        let result;
-        try { result = JSON.parse(raw); }
-        catch (e) {
-          // Attempt salvage: find first { ... }
-          const m = raw.match(/\{[\s\S]*\}/);
-          if (m) result = JSON.parse(m[0]);
-          else throw new Error('Could not parse AI response. The images may be too blurry or complex.');
+          // Merge results
+          finalResult.original += (finalResult.original ? '\n\n' : '') + result.original;
+          finalResult.corrected += (finalResult.corrected ? '\n\n' : '') + result.corrected;
+          if (result.spelling_errors) finalResult.spelling_errors.push(...result.spelling_errors);
+          if (result.grammar_issues) finalResult.grammar_issues.push(...result.grammar_issues);
         }
 
         // ── Render transcription ──
-        const displayText = settings.fixSpelling ? (result.corrected || result.original) : result.original;
+        const displayText = settings.fixSpelling ? (finalResult.corrected || finalResult.original) : finalResult.original;
         const out = document.getElementById('transcription-out');
         out.innerHTML = '';
         const paragraphs = String(displayText).split(/\n\n+/);
@@ -1455,13 +1374,13 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
 
         // ── Render analysis ──
         if (settings.showAnalysis) {
-          renderSpelling(result.spelling_errors || []);
-          renderGrammar(result.grammar_issues || []);
+          renderSpelling(finalResult.spelling_errors || []);
+          renderGrammar(finalResult.grammar_issues || []);
         }
 
-        const se = (result.spelling_errors || []).length;
-        const gi = (result.grammar_issues || []).length;
-        showStatus(`✓ Transcription complete — ${se} spelling issue${se !== 1 ? 's' : ''}, ${gi} grammar issue${gi !== 1 ? 's' : ''} found.`, 'success');
+        const se = finalResult.spelling_errors.length;
+        const gi = finalResult.grammar_issues.length;
+        showStatus(`✓ Transcription complete — Total ${totalImages} images processed in ${batches.length} batches. ${se} spelling issues, ${gi} grammar issues found.`, 'success');
 
       } catch (e) {
         console.error(e);
