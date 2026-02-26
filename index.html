@@ -1273,24 +1273,14 @@
 I have provided ${batches[i].length} image(s) containing handwritten text. They are provided in sequential order. 
 These are pages ${currentBatchIndices.join(', ')} of a larger document.
 
-Carefully read the handwritten text in ALL ${batches[i].length} provided images and do the following :
+Carefully read the handwritten text in ALL ${batches[i].length} provided images and do the following:
 
-1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: You must transcribe all images in the order they are provided. Do not skip any image. The final output for this batch should be a single unified transcription containing the text from ALL images in this batch combined in order. ${langNote}
+1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: Transcribe all images in the order they are provided. Do not skip any image. Combine the transcription for this batch into a single unified text. ${langNote}
 2. PARAGRAPHS: ${paraNote}
 3. SPELLING: ${spellNote}
-4. GRAMMAR: In "grammar_issues", identify every grammatical error. For each, provide: original fragment, corrected version, and a clear explanation.
+4. GRAMMAR: Identify every grammatical error in the transcription.
 
-Return ONLY a valid JSON object — no markdown fences, no extra text — matching this exact schema:
-{
-  "original": "<verbatim transcription of THIS batch, paragraphs split by \\n\\n>",
-  "corrected": "<corrected transcription of THIS batch with spelling fixed, paragraphs split by \\n\\n>",
-  "spelling_errors": [
-    { "wrong": "...", "correct": "...", "note": "brief explanation" }
-  ],
-  "grammar_issues": [
-    { "original": "...", "corrected": "...", "explanation": "clear explanation of the error" }
-  ]
-}`;
+Return the result as a JSON object matching the requested schema.`;
 
           const resp = await fetch(
             `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
@@ -1304,7 +1294,43 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
                     { text: prompt }
                   ]
                 }],
-                generationConfig: { temperature: 0.1, maxOutputTokens: 8192 }
+                generationConfig: {
+                  temperature: 0.1,
+                  maxOutputTokens: 8192,
+                  response_mime_type: "application/json",
+                  response_schema: {
+                    type: "OBJECT",
+                    properties: {
+                      original: { type: "STRING" },
+                      corrected: { type: "STRING" },
+                      spelling_errors: {
+                        type: "ARRAY",
+                        items: {
+                          type: "OBJECT",
+                          properties: {
+                            wrong: { type: "STRING" },
+                            correct: { type: "STRING" },
+                            note: { type: "STRING" }
+                          },
+                          required: ["wrong", "correct", "note"]
+                        }
+                      },
+                      grammar_issues: {
+                        type: "ARRAY",
+                        items: {
+                          type: "OBJECT",
+                          properties: {
+                            original: { type: "STRING" },
+                            corrected: { type: "STRING" },
+                            explanation: { type: "STRING" }
+                          },
+                          required: ["original", "corrected", "explanation"]
+                        }
+                      }
+                    },
+                    required: ["original", "corrected", "spelling_errors", "grammar_issues"]
+                  }
+                }
               })
             }
           );
@@ -1316,16 +1342,15 @@ Return ONLY a valid JSON object — no markdown fences, no extra text — matchi
           }
 
           const data = await resp.json();
-          let raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
           if (!raw) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
 
-          raw = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
           let result;
-          try { result = JSON.parse(raw); }
-          catch (e) {
-            const m = raw.match(/\{[\s\S]*\}/);
-            if (m) result = JSON.parse(m[0]);
-            else throw new Error(`Could not parse AI response for batch ${i + 1}.`);
+          try {
+            result = JSON.parse(raw);
+          } catch (e) {
+            console.error("Parse error on raw text:", raw);
+            throw new Error(`Could not parse AI response for batch ${i + 1}. JSON mode was active but parsing failed.`);
           }
 
           // Merge results
