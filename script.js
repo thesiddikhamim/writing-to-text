@@ -358,15 +358,15 @@ async function transcribe() {
         ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
         : 'Transcribe as a single continuous block of text.';
       const spellNote = settings.fixSpelling
-        ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
+        ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error as {"wrong":"...","correct":"...","note":"..."}.'
         : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
       const grammarNote = settings.fixGrammar
-        ? 'Identify every grammatical error in the transcription and provide suggestions in "grammar_issues". Also apply these grammar fixes to the "corrected" field.'
+        ? 'Identify every grammatical error and provide suggestions in "grammar_issues" as {"original":"...","corrected":"...","explanation":"..."}. Also apply these grammar fixes to the "corrected" field.'
         : 'Do not identify or fix grammatical errors. Set "grammar_issues" to [].';
 
       const prompt = `You are an expert handwriting OCR and proofreading assistant.
 
-I have provided ${batches[i].length} image(s) containing handwritten text. They are provided in sequential order. 
+I have provided ${batches[i].length} image(s) containing handwritten text. They are provided in sequential order.
 These are pages ${currentBatchIndices.join(', ')} of a larger document.
 
 Carefully read the handwritten text in ALL ${batches[i].length} provided images and do the following:
@@ -376,7 +376,13 @@ Carefully read the handwritten text in ALL ${batches[i].length} provided images 
 3. SPELLING: ${spellNote}
 4. GRAMMAR: ${grammarNote}
 
-Return the result as a JSON object matching the requested schema.`;
+Respond with ONLY a raw JSON object (no markdown fences, no extra text) in exactly this structure:
+{
+  "original": "<exact transcription>",
+  "corrected": "<corrected transcription>",
+  "spelling_errors": [{"wrong":"...","correct":"...","note":"..."}],
+  "grammar_issues": [{"original":"...","corrected":"...","explanation":"..."}]
+}`;
 
       const resp = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:streamGenerateContent?alt=sse&key=${settings.apiKey}`,
@@ -392,40 +398,7 @@ Return the result as a JSON object matching the requested schema.`;
             }],
             generationConfig: {
               temperature: 0.1,
-              maxOutputTokens: 8192,
-              response_mime_type: "application/json",
-              response_schema: {
-                type: "OBJECT",
-                properties: {
-                  original: { type: "STRING" },
-                  corrected: { type: "STRING" },
-                  spelling_errors: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        wrong: { type: "STRING" },
-                        correct: { type: "STRING" },
-                        note: { type: "STRING" }
-                      },
-                      required: ["wrong", "correct", "note"]
-                    }
-                  },
-                  grammar_issues: {
-                    type: "ARRAY",
-                    items: {
-                      type: "OBJECT",
-                      properties: {
-                        original: { type: "STRING" },
-                        corrected: { type: "STRING" },
-                        explanation: { type: "STRING" }
-                      },
-                      required: ["original", "corrected", "explanation"]
-                    }
-                  }
-                },
-                required: ["original", "corrected", "spelling_errors", "grammar_issues"]
-              }
+              maxOutputTokens: 8192
             }
           })
         }
@@ -441,23 +414,23 @@ Return the result as a JSON object matching the requested schema.`;
       const decoder = new TextDecoder("utf-8");
       let rawJson = "";
       let buffer = "";
-      
+
       while (true) {
         const { done, value } = await reader.read();
         if (value) {
           buffer += decoder.decode(value, { stream: true });
         }
         if (done) {
-          buffer += decoder.decode(); // Flush stream entirely
+          buffer += decoder.decode();
         }
-        
+
         let lines = buffer.split('\n');
         if (!done) {
-          buffer = lines.pop(); // Keep incomplete line
+          buffer = lines.pop();
         } else {
-          buffer = ""; // End of stream, process all lines
+          buffer = "";
         }
-        
+
         for (const line of lines) {
           const trimmedLine = line.trim();
           if (trimmedLine.startsWith('data: ')) {
@@ -467,37 +440,44 @@ Return the result as a JSON object matching the requested schema.`;
               const dataObj = JSON.parse(dataStr);
               const chunkText = dataObj.candidates?.[0]?.content?.parts?.[0]?.text || "";
               rawJson += chunkText;
-              
-              // Livestream Extraction
-              const extractKey = (settings.fixSpelling || settings.fixGrammar) ? '"corrected": "' : '"original": "';
-              const startIndex = rawJson.indexOf(extractKey);
-              if (startIndex !== -1) {
-                const stringStart = startIndex + extractKey.length;
-                let currentString = rawJson.substring(stringStart);
-                
-                for(let j = 0; j < currentString.length; j++) {
-                  if (currentString[j] === '"' && (j === 0 || currentString[j-1] !== '\\')) {
-                    currentString = currentString.substring(0, j);
+
+              // ── Live: Transcription ──
+              const transcriptKey = (settings.fixSpelling || settings.fixGrammar) ? '"corrected": "' : '"original": "';
+              const txStart = rawJson.indexOf(transcriptKey);
+              if (txStart !== -1) {
+                const strStart = txStart + transcriptKey.length;
+                let partial = rawJson.substring(strStart);
+                // find the closing unescaped quote
+                for (let j = 0; j < partial.length; j++) {
+                  if (partial[j] === '"' && (j === 0 || partial[j - 1] !== '\\')) {
+                    partial = partial.substring(0, j);
                     break;
                   }
                 }
-                
-                currentString = currentString.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-                
+                partial = partial.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
                 const baseText = (settings.fixSpelling || settings.fixGrammar) ? finalResult.corrected : finalResult.original;
-                const combinedText = baseText ? (baseText + '\n\n' + currentString) : currentString;
-                
+                const combinedText = baseText ? (baseText + '\n\n' + partial) : partial;
                 const out = document.getElementById('transcription-out');
                 out.innerHTML = '';
-                const paragraphs = combinedText.split(/\n\n+/);
-                paragraphs.forEach(para => {
+                combinedText.split(/\n\n+/).forEach(para => {
                   if (!para.trim()) return;
                   const p = document.createElement('p');
                   p.textContent = para.trim();
                   out.appendChild(p);
                 });
               }
-            } catch(e) { }
+
+              // ── Live: Spelling errors ──
+              if (settings.showAnalysis && settings.fixSpelling) {
+                liveRenderArray(rawJson, '"spelling_errors"', finalResult.spelling_errors, renderSpelling);
+              }
+
+              // ── Live: Grammar issues ──
+              if (settings.showAnalysis && settings.fixGrammar) {
+                liveRenderArray(rawJson, '"grammar_issues"', finalResult.grammar_issues, renderGrammar);
+              }
+
+            } catch(e) { /* partial SSE chunk, ignore */ }
           }
         }
         if (done) break;
@@ -505,12 +485,18 @@ Return the result as a JSON object matching the requested schema.`;
 
       if (!rawJson) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
 
+      // Strip markdown fences if the model added them despite instructions
+      let cleanJson = rawJson.trim();
+      if (cleanJson.startsWith('```')) {
+        cleanJson = cleanJson.replace(/^```[a-z]*\n?/, '').replace(/```$/, '').trim();
+      }
+
       let result;
       try {
-        result = JSON.parse(rawJson);
+        result = JSON.parse(cleanJson);
       } catch (e) {
-        console.error("Parse error on raw text:", rawJson);
-        throw new Error(`Could not parse AI response for batch ${i + 1}. JSON mode was active but parsing failed.`);
+        console.error("Parse error on raw text:", cleanJson);
+        throw new Error(`Could not parse AI response for batch ${i + 1}. Raw output logged to console.`);
       }
 
       // Merge results
@@ -520,7 +506,7 @@ Return the result as a JSON object matching the requested schema.`;
       if (result.grammar_issues) finalResult.grammar_issues.push(...result.grammar_issues);
     }
 
-    // ── Render analysis ──
+    // Final render of analysis panels with complete data
     if (settings.showAnalysis) {
       renderSpelling(finalResult.spelling_errors || []);
       renderGrammar(finalResult.grammar_issues || []);
@@ -539,6 +525,47 @@ Return the result as a JSON object matching the requested schema.`;
     lucide.createIcons();
   }
 }
+
+// ── Live-parse a JSON array from partial stream text and render it ──
+function liveRenderArray(rawJson, arrayKey, existingItems, renderFn) {
+  const keyIdx = rawJson.indexOf(arrayKey);
+  if (keyIdx === -1) return;
+
+  // Find the opening [ after the key
+  const arrStart = rawJson.indexOf('[', keyIdx);
+  if (arrStart === -1) return;
+
+  // Extract the partial array string up to wherever we are
+  let partial = rawJson.substring(arrStart);
+
+  // Count complete objects by finding balanced { } pairs
+  const items = [];
+  let depth = 0;
+  let objStart = -1;
+  for (let i = 0; i < partial.length; i++) {
+    const ch = partial[i];
+    if (ch === '{') {
+      if (depth === 0) objStart = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && objStart !== -1) {
+        const objStr = partial.substring(objStart, i + 1);
+        try {
+          items.push(JSON.parse(objStr));
+        } catch (e) { /* incomplete object */ }
+        objStart = -1;
+      }
+    }
+  }
+
+  // Only re-render if we have more items or this is the first time
+  const combined = [...existingItems, ...items.filter(
+    newItem => !existingItems.some(e => JSON.stringify(e) === JSON.stringify(newItem))
+  )];
+  if (combined.length > 0) renderFn(combined);
+}
+
 
 // ══ ANALYSIS RENDERERS ══
 function renderSpelling(errors) {
