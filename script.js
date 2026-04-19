@@ -39,7 +39,7 @@ document.getElementById('save-settings').addEventListener('click', () => {
   localStorage.setItem('script_v2', JSON.stringify(settings));
   document.getElementById('analysis-section').style.display = settings.showAnalysis ? '' : 'none';
   closeSettings();
-  showStatus('✓ Settings saved successfully.', 'success');
+  showStatus('<i data-lucide="check-circle-2" width="16" height="16"></i> Settings saved successfully.', 'success');
 });
 
 // ══ HAMBURGER ══
@@ -183,11 +183,12 @@ function renderGallery() {
     div.innerHTML = `
       <img src="${item.dataURL}" alt="Preview">
       <div style="position: absolute; bottom: 4px; left: 4px; background: rgba(0,0,0,0.6); color: white; padding: 2px 6px; border-radius: 2px; font-size: 0.7rem; font-family: 'JetBrains Mono', monospace;">Page ${index + 1}</div>
-      <button class="crop-btn-overlay" onclick="openCrop('${item.id}')" title="Crop">✂</button>
-      <button class="remove-img-btn" onclick="removeImage('${item.id}')" title="Remove">&times;</button>
+      <button class="crop-btn-overlay" onclick="openCrop('${item.id}')" title="Crop"><i data-lucide="crop" width="14" height="14"></i></button>
+      <button class="remove-img-btn" onclick="removeImage('${item.id}')" title="Remove"><i data-lucide="trash" width="14" height="14"></i></button>
     `;
     gallery.appendChild(div);
   });
+  lucide.createIcons();
 }
 
 window.removeImage = function (id) {
@@ -498,14 +499,15 @@ Return the result as a JSON object matching the requested schema.`;
 
     const se = finalResult.spelling_errors.length;
     const gi = finalResult.grammar_issues.length;
-    showStatus(`✓ Transcription complete — Total ${totalImages} images processed in ${batches.length} batches. ${se} spelling issues, ${gi} grammar issues found.`, 'success');
+    showStatus(`<i data-lucide="check-circle-2" width="16" height="16"></i> Transcription complete — ${totalImages} images processed. ${se} spelling issues, ${gi} grammar issues.`, 'success');
 
   } catch (e) {
     console.error(e);
     showStatus('Error: ' + e.message, 'error');
   } finally {
     btn.disabled = imageItems.length === 0;
-    label.innerHTML = '✦ Transcribe Handwriting';
+    label.innerHTML = '<i data-lucide="wand-2" width="18" height="18"></i> Transcribe Handwriting';
+    lucide.createIcons();
   }
 }
 
@@ -515,7 +517,9 @@ function renderSpelling(errors) {
   const count = document.getElementById('spell-count');
   count.textContent = errors.length;
   if (!errors.length) {
-    body.innerHTML = '<div class="analysis-empty">✓ No spelling errors found!</div>'; return;
+    body.innerHTML = '<div class="analysis-empty"><i data-lucide="check-circle-2" width="24" height="24"></i><div>No spelling errors found!</div></div>'; 
+    lucide.createIcons();
+    return;
   }
   body.innerHTML = '';
   errors.forEach((e, i) => {
@@ -525,12 +529,13 @@ function renderSpelling(errors) {
     d.innerHTML = `
   <div class="issue-word">
     <span class="wrong">${esc(e.wrong)}</span>
-    <span class="arrow">→</span>
+    <span class="arrow"><i data-lucide="arrow-right" width="14" height="14"></i></span>
     <span class="right">${esc(e.correct)}</span>
   </div>
   <div class="issue-explain">${esc(e.note || '')}</div>`;
     body.appendChild(d);
   });
+  lucide.createIcons();
 }
 
 function renderGrammar(issues) {
@@ -538,7 +543,9 @@ function renderGrammar(issues) {
   const count = document.getElementById('grammar-count');
   count.textContent = issues.length;
   if (!issues.length) {
-    body.innerHTML = '<div class="analysis-empty">✓ No grammar issues found!</div>'; return;
+    body.innerHTML = '<div class="analysis-empty"><i data-lucide="check-circle-2" width="24" height="24"></i><div>No grammar issues found!</div></div>'; 
+    lucide.createIcons();
+    return;
   }
   body.innerHTML = '';
   issues.forEach((g, i) => {
@@ -548,12 +555,13 @@ function renderGrammar(issues) {
     d.innerHTML = `
   <div class="issue-word">
     <span class="wrong">${esc(g.original)}</span>
-    <span class="arrow">→</span>
+    <span class="arrow"><i data-lucide="arrow-right" width="14" height="14"></i></span>
     <span class="right">${esc(g.corrected)}</span>
   </div>
   <div class="issue-explain">${esc(g.explanation || '')}</div>`;
     body.appendChild(d);
   });
+  lucide.createIcons();
 }
 
 function esc(s) {
@@ -565,6 +573,7 @@ function showStatus(msg, type) {
   const bar = document.getElementById('status-bar');
   bar.className = 'show ' + type;
   bar.innerHTML = msg;
+  lucide.createIcons();
 }
 function clearStatus() {
   const bar = document.getElementById('status-bar');
@@ -577,7 +586,7 @@ document.getElementById('copy-btn').addEventListener('click', () => {
   const txt = document.getElementById('transcription-out').innerText;
   if (!txt.trim()) { showStatus('Nothing to copy.', 'error'); return; }
   navigator.clipboard.writeText(txt)
-    .then(() => showStatus('✓ Copied to clipboard!', 'success'))
+    .then(() => showStatus('<i data-lucide="clipboard-check" width="16" height="16"></i> Copied to clipboard!', 'success'))
     .catch(() => showStatus('Copy failed — try manually selecting the text.', 'error'));
 });
 

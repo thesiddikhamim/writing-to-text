@@ -6,17 +6,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Script — Handwriting Transcriber</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link
-    href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,700;1,400&family=Crimson+Pro:ital,wght@0,300;0,400;0,600;1,300;1,400&family=JetBrains+Mono:wght@400;500&display=swap"
-    rel="stylesheet">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" />
+  <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 
 <body>
+  <!-- Ambient Background -->
+  <div class="ambient-bg"></div>
 
   <header>
-    <div class="logo">Script<span>·</span></div>
+    <div class="logo">
+      <i data-lucide="scan-text"></i> Script<span>·</span>
+    </div>
     <button id="menu-btn" aria-label="Settings">
       <span></span><span></span><span></span>
     </button>
@@ -26,7 +30,9 @@
 
   <!-- SETTINGS PANEL -->
   <div id="settings-panel">
-    <div class="settings-title">⚙ Settings</div>
+    <div class="settings-title">
+      <i data-lucide="settings-2"></i> Settings
+    </div>
 
     <div class="settings-section-label">API Configuration</div>
 
@@ -34,7 +40,9 @@
       <label class="setting-label">Gemini API Key</label>
       <div class="api-key-wrap">
         <input type="password" id="api-key-input" class="setting-input" placeholder="AIzaSy...">
-        <button class="eye-btn" id="toggle-key-vis" title="Show/Hide key">👁</button>
+        <button class="eye-btn" id="toggle-key-vis" title="Show/Hide key">
+          <i data-lucide="eye" width="16" height="16"></i>
+        </button>
       </div>
     </div>
 
@@ -70,23 +78,19 @@
     <div class="setting-group">
       <div class="toggle-row">
         <span class="toggle-desc">Fix spelling in output</span>
-        <label class="toggle"><input type="checkbox" id="fix-spelling" checked><span
-            class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="fix-spelling" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <span class="toggle-desc">Fix grammar in output</span>
-        <label class="toggle"><input type="checkbox" id="fix-grammar" checked><span
-            class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="fix-grammar" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <span class="toggle-desc">Preserve paragraphs</span>
-        <label class="toggle"><input type="checkbox" id="keep-paragraphs" checked><span
-            class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="keep-paragraphs" checked><span class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
         <span class="toggle-desc">Show analysis panels</span>
-        <label class="toggle"><input type="checkbox" id="show-analysis" checked><span
-            class="toggle-slider"></span></label>
+        <label class="toggle"><input type="checkbox" id="show-analysis" checked><span class="toggle-slider"></span></label>
       </div>
     </div>
 
@@ -103,7 +107,10 @@
       </select>
     </div>
 
-    <button class="save-btn" id="save-settings">Save Settings</button>
+    <button class="save-btn" id="save-settings">
+      <i data-lucide="check" width="18" height="18"></i>
+      Save Settings
+    </button>
   </div>
 
   <!-- MAIN -->
@@ -114,48 +121,60 @@
       <div>
         <div class="panel">
           <div class="panel-head">
-            <span class="panel-title">📄 Upload or Capture</span>
+            <span class="panel-title"><i data-lucide="image-plus" width="16" height="16"></i> Upload or Capture</span>
           </div>
           <div class="panel-body">
 
             <div class="upload-zone" id="drop-zone">
               <input type="file" id="file-input" accept="image/*, application/pdf" multiple>
-              <span class="upload-icon">🖼</span>
-              <div class="upload-text">Tap to Camera or Browse</div>
-              <div class="upload-sub">PNG · JPG · WEBP · PDF · Add consecutively</div>
+              <div class="upload-icon-wrap">
+                <i data-lucide="upload-cloud" width="48" height="48"></i>
+              </div>
+              <div class="upload-text">Click or Drag to Upload</div>
+              <div class="upload-sub">PNG · JPG · WEBP · PDF</div>
             </div>
 
             <div id="preview-gallery"></div>
             <div id="preview-actions-wrap" style="display: none;">
               <div class="preview-actions">
-                <button class="cam-btn secondary" id="clear-all-btn">✕ Clear All</button>
+                <button class="cam-btn secondary" id="clear-all-btn">
+                  <i data-lucide="trash-2" width="14" height="14"></i> Clear All
+                </button>
               </div>
             </div>
 
             <div id="status-bar"></div>
 
             <button class="transcribe-btn" id="transcribe-btn" disabled>
-              <span id="transcribe-label">✦ Transcribe Handwriting</span>
+              <span id="transcribe-label">
+                <i data-lucide="wand-2" width="18" height="18"></i> Transcribe Handwriting
+              </span>
             </button>
-            <div class="shortcut-hint">Ctrl + Enter to transcribe</div>
+            <div class="shortcut-hint">Cmd/Ctrl + Enter to transcribe</div>
           </div>
         </div>
       </div>
 
       <!-- RIGHT: Output -->
       <div>
-        <div class="panel">
+        <div class="panel output-panel">
           <div class="panel-head">
-            <span class="panel-title">✍ Transcription</span>
+            <span class="panel-title"><i data-lucide="file-text" width="16" height="16"></i> Transcription</span>
             <div class="output-toolbar">
-              <button class="tool-btn" id="copy-btn">Copy</button>
-              <button class="tool-btn" id="download-btn">Save .txt</button>
-              <button class="tool-btn" id="clear-out-btn">Clear</button>
+              <button class="tool-btn" id="copy-btn" title="Copy">
+                <i data-lucide="copy" width="14" height="14"></i>
+              </button>
+              <button class="tool-btn" id="download-btn" title="Download">
+                <i data-lucide="download" width="14" height="14"></i>
+              </button>
+              <button class="tool-btn danger" id="clear-out-btn" title="Clear">
+                <i data-lucide="x" width="14" height="14"></i>
+              </button>
             </div>
           </div>
           <div class="panel-body">
             <div id="transcription-out" contenteditable="true"
-              data-placeholder="Your transcribed text will appear here, with paragraphs preserved as written…">
+              data-placeholder="Your transcribed text will appear here, carefully preserved…">
             </div>
           </div>
         </div>
@@ -165,40 +184,49 @@
 
     <!-- Analysis Row -->
     <div class="analysis-grid" id="analysis-section">
-      <div class="analysis-panel">
+      <div class="analysis-panel spell-panel">
         <div class="analysis-head spelling">
           <div class="analysis-dot"></div>
           <span class="analysis-head-title">Spelling Errors</span>
           <span class="issue-count" id="spell-count">0</span>
         </div>
         <div class="analysis-body" id="spell-body">
-          <div class="analysis-empty">No spelling issues detected yet.</div>
+          <div class="analysis-empty">
+            <i data-lucide="check-circle-2" width="24" height="24"></i>
+            <div>No spelling issues detected.</div>
+          </div>
         </div>
       </div>
 
-      <div class="analysis-panel">
+      <div class="analysis-panel grammar-panel">
         <div class="analysis-head grammar">
           <div class="analysis-dot"></div>
           <span class="analysis-head-title">Grammar Issues</span>
           <span class="issue-count" id="grammar-count">0</span>
         </div>
         <div class="analysis-body" id="grammar-body">
-          <div class="analysis-empty">No grammar issues detected yet.</div>
+          <div class="analysis-empty">
+            <i data-lucide="check-circle-2" width="24" height="24"></i>
+            <div>No grammar issues detected.</div>
+          </div>
         </div>
       </div>
-    </div>
     </div>
   </main>
 
   <!-- MODALS -->
   <div id="crop-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">Crop Image</div>
+    <div class="modal-content glass-modal">
+      <div class="modal-head">
+        <i data-lucide="crop"></i> Crop Image
+      </div>
       <div class="crop-container">
         <img id="crop-image" src="" alt="Crop Area">
       </div>
       <div class="modal-actions">
-        <button id="save-crop-btn" class="cam-btn" style="background:var(--sepia);color:var(--paper)">Save Crop</button>
+        <button id="save-crop-btn" class="cam-btn primary-btn">
+          <i data-lucide="check"></i> Save Crop
+        </button>
         <button id="close-crop-btn" class="cam-btn secondary">Cancel</button>
       </div>
     </div>
@@ -206,8 +234,10 @@
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-
   <script src="script.js"></script>
+  <script>
+    // Initialize initial icons
+    lucide.createIcons();
+  </script>
 </body>
-
 </html>
