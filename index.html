@@ -1040,6 +1040,11 @@
             class="toggle-slider"></span></label>
       </div>
       <div class="toggle-row">
+        <span class="toggle-desc">Fix grammar in output</span>
+        <label class="toggle"><input type="checkbox" id="fix-grammar" checked><span
+            class="toggle-slider"></span></label>
+      </div>
+      <div class="toggle-row">
         <span class="toggle-desc">Preserve paragraphs</span>
         <label class="toggle"><input type="checkbox" id="keep-paragraphs" checked><span
             class="toggle-slider"></span></label>
@@ -1186,7 +1191,7 @@
     let imageItems = []; // Array of { id, dataURL, mimeType }
     let settings = {
       apiKey: '', model: 'gemini-2.0-flash', lang: 'auto',
-      fixSpelling: true, keepParagraphs: true, showAnalysis: true, enhance: 'none'
+      fixSpelling: true, fixGrammar: true, keepParagraphs: true, showAnalysis: true, enhance: 'none'
     };
 
     // ══ LOAD / SAVE SETTINGS ══
@@ -1200,6 +1205,7 @@
       document.getElementById('model-select').value = settings.model;
       document.getElementById('lang-select').value = settings.lang;
       document.getElementById('fix-spelling').checked = settings.fixSpelling;
+      document.getElementById('fix-grammar').checked = settings.fixGrammar;
       document.getElementById('keep-paragraphs').checked = settings.keepParagraphs;
       document.getElementById('show-analysis').checked = settings.showAnalysis;
       document.getElementById('enhance-select').value = settings.enhance;
@@ -1212,6 +1218,7 @@
       settings.model = document.getElementById('model-select').value;
       settings.lang = document.getElementById('lang-select').value;
       settings.fixSpelling = document.getElementById('fix-spelling').checked;
+      settings.fixGrammar = document.getElementById('fix-grammar').checked;
       settings.keepParagraphs = document.getElementById('keep-paragraphs').checked;
       settings.showAnalysis = document.getElementById('show-analysis').checked;
       settings.enhance = document.getElementById('enhance-select').value;
@@ -1501,6 +1508,9 @@
           const spellNote = settings.fixSpelling
             ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
             : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
+          const grammarNote = settings.fixGrammar
+            ? 'Identify every grammatical error in the transcription and provide suggestions in "grammar_issues". Also apply these grammar fixes to the "corrected" field.'
+            : 'Do not identify or fix grammatical errors. Set "grammar_issues" to [].';
 
           const prompt = `You are an expert handwriting OCR and proofreading assistant.
 
@@ -1512,7 +1522,7 @@ Carefully read the handwritten text in ALL ${batches[i].length} provided images 
 1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: Transcribe all images in the order they are provided. Do not skip any image. Combine the transcription for this batch into a single unified text. ${langNote}
 2. PARAGRAPHS: ${paraNote}
 3. SPELLING: ${spellNote}
-4. GRAMMAR: Identify every grammatical error in the transcription.
+4. GRAMMAR: ${grammarNote}
 
 Return the result as a JSON object matching the requested schema.`;
 
@@ -1595,7 +1605,7 @@ Return the result as a JSON object matching the requested schema.`;
         }
 
         // ── Render transcription ──
-        const displayText = settings.fixSpelling ? (finalResult.corrected || finalResult.original) : finalResult.original;
+        const displayText = (settings.fixSpelling || settings.fixGrammar) ? (finalResult.corrected || finalResult.original) : finalResult.original;
         const out = document.getElementById('transcription-out');
         out.innerHTML = '';
         const paragraphs = String(displayText).split(/\n\n+/);
