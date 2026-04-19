@@ -1078,10 +1078,10 @@
           <div class="panel-body">
 
             <div class="upload-zone" id="drop-zone">
-              <input type="file" id="file-input" accept="image/*">
+              <input type="file" id="file-input" accept="image/*, application/pdf">
               <span class="upload-icon">🖼</span>
               <div class="upload-text">Tap to Camera or Browse</div>
-              <div class="upload-sub">PNG · JPG · WEBP · Add consecutively</div>
+              <div class="upload-sub">PNG · JPG · WEBP · PDF · Add consecutively</div>
             </div>
 
             <div id="preview-gallery"></div>
@@ -1164,8 +1164,12 @@
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
   <script>
+    // Initialize PDF.js worker
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
     // ══ STATE ══
     let imageItems = []; // Array of { id, dataURL, mimeType }
     let settings = {
@@ -1249,8 +1253,19 @@
 
     function loadFile(file) {
       return new Promise((resolve) => {
+        if (file.type === 'application/pdf') {
+          showStatus(`Processing PDF "${file.name}"...`, 'loading');
+          const reader = new FileReader();
+          reader.onload = async e => {
+            await extractPdfPages(e.target.result);
+            resolve();
+          };
+          reader.readAsArrayBuffer(file);
+          return;
+        }
+
         if (!file.type.startsWith('image/')) {
-          showStatus(`Skipped "${file.name}" — not an image.`, 'error');
+          showStatus(`Skipped "${file.name}" — not an image or PDF.`, 'error');
           resolve();
           return;
         }
@@ -1261,6 +1276,40 @@
         };
         reader.readAsDataURL(file);
       });
+    }
+
+    async function extractPdfPages(arrayBuffer) {
+      try {
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        for (let i = 1; i <= pdf.numPages; i++) {
+          showStatus(`Extracting PDF page ${i} of ${pdf.numPages}...`, 'loading');
+          const page = await pdf.getPage(i);
+          const scale = 2.0; // High resolution for pure OCR text
+          const viewport = page.getViewport({ scale });
+          
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          
+          // PDF.js defaults to transparent background; override to white
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          const renderContext = {
+            canvasContext: ctx,
+            viewport: viewport
+          };
+          
+          await page.render(renderContext).promise;
+          const dataURL = canvas.toDataURL('image/jpeg', 0.95);
+          await processAndAdd(dataURL, 'image/jpeg');
+        }
+        clearStatus();
+      } catch (err) {
+        console.error('Error processing PDF:', err);
+        showStatus('Error processing PDF file.', 'error');
+      }
     }
 
     async function processAndAdd(dataURL, mimeType) {
