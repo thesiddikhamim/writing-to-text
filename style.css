@@ -954,6 +954,11 @@ html.light-theme .tool-btn:hover {
   opacity: 0.7;
 }
 
+.analysis-empty.muted {
+  opacity: 0.45;
+  font-style: italic;
+}
+
 .issue-item {
   padding: 1rem;
   margin-bottom: 0.75rem;

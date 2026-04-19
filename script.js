@@ -327,6 +327,12 @@ async function transcribe() {
   btn.disabled = true;
   label.innerHTML = '<span class="spinner"></span>Transcribing…';
 
+  // Show "turned off" state immediately in analysis panels
+  if (settings.showAnalysis) {
+    if (!settings.fixSpelling) renderSpelling([], true);
+    if (!settings.fixGrammar) renderGrammar([], true);
+  }
+
   const batchSize = 3;
   const totalImages = imageItems.length;
   const batches = [];
@@ -358,10 +364,10 @@ async function transcribe() {
         ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
         : 'Transcribe as a single continuous block of text.';
       const spellNote = settings.fixSpelling
-        ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error as {"wrong":"...","correct":"...","note":"..."}.'
+        ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
         : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
       const grammarNote = settings.fixGrammar
-        ? 'Identify every grammatical error and provide suggestions in "grammar_issues" as {"original":"...","corrected":"...","explanation":"..."}. Also apply these grammar fixes to the "corrected" field.'
+        ? 'Identify every grammatical error in the transcription and provide suggestions in "grammar_issues". Also apply these grammar fixes to the "corrected" field.'
         : 'Do not identify or fix grammatical errors. Set "grammar_issues" to [].';
 
       const prompt = `You are an expert handwriting OCR and proofreading assistant.
@@ -376,13 +382,7 @@ Carefully read the handwritten text in ALL ${batches[i].length} provided images 
 3. SPELLING: ${spellNote}
 4. GRAMMAR: ${grammarNote}
 
-Respond with ONLY a raw JSON object (no markdown fences, no extra text) in exactly this structure:
-{
-  "original": "<exact transcription>",
-  "corrected": "<corrected transcription>",
-  "spelling_errors": [{"wrong":"...","correct":"...","note":"..."}],
-  "grammar_issues": [{"original":"...","corrected":"...","explanation":"..."}]
-}`;
+Return the result as a JSON object matching the requested schema.`;
 
       const resp = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:streamGenerateContent?alt=sse&key=${settings.apiKey}`,
@@ -398,7 +398,40 @@ Respond with ONLY a raw JSON object (no markdown fences, no extra text) in exact
             }],
             generationConfig: {
               temperature: 0.1,
-              maxOutputTokens: 8192
+              maxOutputTokens: 8192,
+              response_mime_type: "application/json",
+              response_schema: {
+                type: "OBJECT",
+                properties: {
+                  original: { type: "STRING" },
+                  corrected: { type: "STRING" },
+                  spelling_errors: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        wrong: { type: "STRING" },
+                        correct: { type: "STRING" },
+                        note: { type: "STRING" }
+                      },
+                      required: ["wrong", "correct", "note"]
+                    }
+                  },
+                  grammar_issues: {
+                    type: "ARRAY",
+                    items: {
+                      type: "OBJECT",
+                      properties: {
+                        original: { type: "STRING" },
+                        corrected: { type: "STRING" },
+                        explanation: { type: "STRING" }
+                      },
+                      required: ["original", "corrected", "explanation"]
+                    }
+                  }
+                },
+                required: ["original", "corrected", "spelling_errors", "grammar_issues"]
+              }
             }
           })
         }
@@ -417,104 +450,77 @@ Respond with ONLY a raw JSON object (no markdown fences, no extra text) in exact
 
       while (true) {
         const { done, value } = await reader.read();
-        if (value) {
-          buffer += decoder.decode(value, { stream: true });
-        }
-        if (done) {
-          buffer += decoder.decode();
-        }
+        if (value) buffer += decoder.decode(value, { stream: true });
+        if (done) buffer += decoder.decode();
 
         let lines = buffer.split('\n');
-        if (!done) {
-          buffer = lines.pop();
-        } else {
-          buffer = "";
-        }
+        buffer = done ? "" : lines.pop();
 
         for (const line of lines) {
           const trimmedLine = line.trim();
-          if (trimmedLine.startsWith('data: ')) {
-            const dataStr = trimmedLine.substring(6);
-            if (dataStr === '[DONE]') continue;
-            try {
-              const dataObj = JSON.parse(dataStr);
-              const chunkText = dataObj.candidates?.[0]?.content?.parts?.[0]?.text || "";
-              rawJson += chunkText;
+          if (!trimmedLine.startsWith('data: ')) continue;
+          const dataStr = trimmedLine.substring(6);
+          if (dataStr === '[DONE]') continue;
+          try {
+            const dataObj = JSON.parse(dataStr);
+            const chunkText = dataObj.candidates?.[0]?.content?.parts?.[0]?.text || "";
+            rawJson += chunkText;
 
-              // ── Live: Transcription ──
-              const transcriptKey = (settings.fixSpelling || settings.fixGrammar) ? '"corrected": "' : '"original": "';
-              const txStart = rawJson.indexOf(transcriptKey);
-              if (txStart !== -1) {
-                const strStart = txStart + transcriptKey.length;
-                let partial = rawJson.substring(strStart);
-                // find the closing unescaped quote
-                for (let j = 0; j < partial.length; j++) {
-                  if (partial[j] === '"' && (j === 0 || partial[j - 1] !== '\\')) {
-                    partial = partial.substring(0, j);
-                    break;
-                  }
+            // ── Live streaming: transcription text only ──
+            const transcriptKey = (settings.fixSpelling || settings.fixGrammar) ? '"corrected": "' : '"original": "';
+            const txStart = rawJson.indexOf(transcriptKey);
+            if (txStart !== -1) {
+              let partial = rawJson.substring(txStart + transcriptKey.length);
+              // find the first unescaped closing quote
+              for (let j = 0; j < partial.length; j++) {
+                if (partial[j] === '"' && partial[j - 1] !== '\\') {
+                  partial = partial.substring(0, j);
+                  break;
                 }
-                partial = partial.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-                const baseText = (settings.fixSpelling || settings.fixGrammar) ? finalResult.corrected : finalResult.original;
-                const combinedText = baseText ? (baseText + '\n\n' + partial) : partial;
-                const out = document.getElementById('transcription-out');
-                out.innerHTML = '';
-                combinedText.split(/\n\n+/).forEach(para => {
-                  if (!para.trim()) return;
-                  const p = document.createElement('p');
-                  p.textContent = para.trim();
-                  out.appendChild(p);
-                });
               }
-
-              // ── Live: Spelling errors ──
-              if (settings.showAnalysis && settings.fixSpelling) {
-                liveRenderArray(rawJson, '"spelling_errors"', finalResult.spelling_errors, renderSpelling);
-              }
-
-              // ── Live: Grammar issues ──
-              if (settings.showAnalysis && settings.fixGrammar) {
-                liveRenderArray(rawJson, '"grammar_issues"', finalResult.grammar_issues, renderGrammar);
-              }
-
-            } catch(e) { /* partial SSE chunk, ignore */ }
-          }
+              partial = partial.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+              const baseText = (settings.fixSpelling || settings.fixGrammar) ? finalResult.corrected : finalResult.original;
+              const combinedText = baseText ? (baseText + '\n\n' + partial) : partial;
+              const out = document.getElementById('transcription-out');
+              out.innerHTML = '';
+              combinedText.split(/\n\n+/).forEach(para => {
+                if (!para.trim()) return;
+                const p = document.createElement('p');
+                p.textContent = para.trim();
+                out.appendChild(p);
+              });
+            }
+          } catch (e) { /* partial SSE chunk — ignore */ }
         }
         if (done) break;
       }
 
       if (!rawJson) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
 
-      // Strip markdown fences if the model added them despite instructions
-      let cleanJson = rawJson.trim();
-      if (cleanJson.startsWith('```')) {
-        cleanJson = cleanJson.replace(/^```[a-z]*\n?/, '').replace(/```$/, '').trim();
-      }
-
       let result;
       try {
-        result = JSON.parse(cleanJson);
+        result = JSON.parse(rawJson);
       } catch (e) {
-        console.error("Parse error on raw text:", cleanJson);
-        throw new Error(`Could not parse AI response for batch ${i + 1}. Raw output logged to console.`);
+        console.error("Parse error on raw text:", rawJson);
+        throw new Error(`Could not parse AI response for batch ${i + 1}.`);
       }
 
       // Merge results
-      finalResult.original += (finalResult.original ? '\n\n' : '') + result.original;
-      finalResult.corrected += (finalResult.corrected ? '\n\n' : '') + result.corrected;
+      finalResult.original  += (finalResult.original  ? '\n\n' : '') + (result.original  || '');
+      finalResult.corrected += (finalResult.corrected ? '\n\n' : '') + (result.corrected || '');
       if (result.spelling_errors) finalResult.spelling_errors.push(...result.spelling_errors);
-      if (result.grammar_issues) finalResult.grammar_issues.push(...result.grammar_issues);
+      if (result.grammar_issues)  finalResult.grammar_issues.push(...result.grammar_issues);
     }
 
-    // Final render of analysis panels with complete data
+    // ── Render analysis panels after all batches complete ──
     if (settings.showAnalysis) {
-      renderSpelling(finalResult.spelling_errors || []);
-      renderGrammar(finalResult.grammar_issues || []);
+      renderSpelling(finalResult.spelling_errors || [], !settings.fixSpelling);
+      renderGrammar(finalResult.grammar_issues   || [], !settings.fixGrammar);
     }
 
     const se = finalResult.spelling_errors.length;
     const gi = finalResult.grammar_issues.length;
-    showStatus(`<i data-lucide="check-circle-2" width="16" height="16"></i> Transcription complete — ${totalImages} images processed. ${se} spelling issues, ${gi} grammar issues.`, 'success');
+    showStatus(`<i data-lucide="check-circle-2" width="16" height="16"></i> Transcription complete — ${totalImages} image${totalImages !== 1 ? 's' : ''} processed. ${se} spelling issue${se !== 1 ? 's' : ''}, ${gi} grammar issue${gi !== 1 ? 's' : ''}.`, 'success');
 
   } catch (e) {
     console.error(e);
@@ -526,54 +532,21 @@ Respond with ONLY a raw JSON object (no markdown fences, no extra text) in exact
   }
 }
 
-// ── Live-parse a JSON array from partial stream text and render it ──
-function liveRenderArray(rawJson, arrayKey, existingItems, renderFn) {
-  const keyIdx = rawJson.indexOf(arrayKey);
-  if (keyIdx === -1) return;
+// ══ ANALYSIS RENDERERS ══
+function renderSpelling(errors, disabled = false) {
+  const body  = document.getElementById('spell-body');
+  const count = document.getElementById('spell-count');
 
-  // Find the opening [ after the key
-  const arrStart = rawJson.indexOf('[', keyIdx);
-  if (arrStart === -1) return;
-
-  // Extract the partial array string up to wherever we are
-  let partial = rawJson.substring(arrStart);
-
-  // Count complete objects by finding balanced { } pairs
-  const items = [];
-  let depth = 0;
-  let objStart = -1;
-  for (let i = 0; i < partial.length; i++) {
-    const ch = partial[i];
-    if (ch === '{') {
-      if (depth === 0) objStart = i;
-      depth++;
-    } else if (ch === '}') {
-      depth--;
-      if (depth === 0 && objStart !== -1) {
-        const objStr = partial.substring(objStart, i + 1);
-        try {
-          items.push(JSON.parse(objStr));
-        } catch (e) { /* incomplete object */ }
-        objStart = -1;
-      }
-    }
+  if (disabled) {
+    count.textContent = '—';
+    body.innerHTML = '<div class="analysis-empty muted"><i data-lucide="slash" width="24" height="24"></i><div>Spelling check turned off</div></div>';
+    lucide.createIcons();
+    return;
   }
 
-  // Only re-render if we have more items or this is the first time
-  const combined = [...existingItems, ...items.filter(
-    newItem => !existingItems.some(e => JSON.stringify(e) === JSON.stringify(newItem))
-  )];
-  if (combined.length > 0) renderFn(combined);
-}
-
-
-// ══ ANALYSIS RENDERERS ══
-function renderSpelling(errors) {
-  const body = document.getElementById('spell-body');
-  const count = document.getElementById('spell-count');
   count.textContent = errors.length;
   if (!errors.length) {
-    body.innerHTML = '<div class="analysis-empty"><i data-lucide="check-circle-2" width="24" height="24"></i><div>No spelling errors found!</div></div>'; 
+    body.innerHTML = '<div class="analysis-empty"><i data-lucide="check-circle-2" width="24" height="24"></i><div>No spelling errors found!</div></div>';
     lucide.createIcons();
     return;
   }
@@ -594,12 +567,20 @@ function renderSpelling(errors) {
   lucide.createIcons();
 }
 
-function renderGrammar(issues) {
-  const body = document.getElementById('grammar-body');
+function renderGrammar(issues, disabled = false) {
+  const body  = document.getElementById('grammar-body');
   const count = document.getElementById('grammar-count');
+
+  if (disabled) {
+    count.textContent = '—';
+    body.innerHTML = '<div class="analysis-empty muted"><i data-lucide="slash" width="24" height="24"></i><div>Grammar check turned off</div></div>';
+    lucide.createIcons();
+    return;
+  }
+
   count.textContent = issues.length;
   if (!issues.length) {
-    body.innerHTML = '<div class="analysis-empty"><i data-lucide="check-circle-2" width="24" height="24"></i><div>No grammar issues found!</div></div>'; 
+    body.innerHTML = '<div class="analysis-empty"><i data-lucide="check-circle-2" width="24" height="24"></i><div>No grammar issues found!</div></div>';
     lucide.createIcons();
     return;
   }
@@ -623,6 +604,7 @@ function renderGrammar(issues) {
 function esc(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+
 
 // ══ STATUS ══
 function showStatus(msg, type) {
