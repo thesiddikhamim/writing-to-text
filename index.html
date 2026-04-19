@@ -1081,7 +1081,7 @@
           <div class="panel-body">
 
             <div class="upload-zone" id="drop-zone">
-              <input type="file" id="file-input" accept="image/*, application/pdf">
+              <input type="file" id="file-input" accept="image/*, application/pdf" multiple>
               <span class="upload-icon">🖼</span>
               <div class="upload-text">Tap to Camera or Browse</div>
               <div class="upload-sub">PNG · JPG · WEBP · PDF · Add consecutively</div>
@@ -1521,7 +1521,7 @@ Carefully read the handwritten text in ALL ${batches[i].length} provided images 
 Return the result as a JSON object matching the requested schema.`;
 
           const resp = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
+            `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:streamGenerateContent?alt=sse&key=${settings.apiKey}`,
             {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1579,15 +1579,79 @@ Return the result as a JSON object matching the requested schema.`;
             throw new Error(`Batch ${i + 1} failed: ${msg}`);
           }
 
-          const data = await resp.json();
-          const raw = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (!raw) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
+          const reader = resp.body.getReader();
+          const decoder = new TextDecoder("utf-8");
+          let rawJson = "";
+          let buffer = "";
+          
+          while (true) {
+            const { done, value } = await reader.read();
+            if (value) {
+              buffer += decoder.decode(value, { stream: true });
+            }
+            if (done) {
+              buffer += decoder.decode(); // Flush stream entirely
+            }
+            
+            let lines = buffer.split('\n');
+            if (!done) {
+              buffer = lines.pop(); // Keep incomplete line
+            } else {
+              buffer = ""; // End of stream, process all lines
+            }
+            
+            for (const line of lines) {
+              const trimmedLine = line.trim();
+              if (trimmedLine.startsWith('data: ')) {
+                const dataStr = trimmedLine.substring(6);
+                if (dataStr === '[DONE]') continue;
+                try {
+                  const dataObj = JSON.parse(dataStr);
+                  const chunkText = dataObj.candidates?.[0]?.content?.parts?.[0]?.text || "";
+                  rawJson += chunkText;
+                  
+                  // Livestream Extraction
+                  const extractKey = (settings.fixSpelling || settings.fixGrammar) ? '"corrected": "' : '"original": "';
+                  const startIndex = rawJson.indexOf(extractKey);
+                  if (startIndex !== -1) {
+                    const stringStart = startIndex + extractKey.length;
+                    let currentString = rawJson.substring(stringStart);
+                    
+                    for(let j = 0; j < currentString.length; j++) {
+                      if (currentString[j] === '"' && (j === 0 || currentString[j-1] !== '\\')) {
+                        currentString = currentString.substring(0, j);
+                        break;
+                      }
+                    }
+                    
+                    currentString = currentString.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
+                    
+                    const baseText = (settings.fixSpelling || settings.fixGrammar) ? finalResult.corrected : finalResult.original;
+                    const combinedText = baseText ? (baseText + '\n\n' + currentString) : currentString;
+                    
+                    const out = document.getElementById('transcription-out');
+                    out.innerHTML = '';
+                    const paragraphs = combinedText.split(/\n\n+/);
+                    paragraphs.forEach(para => {
+                      if (!para.trim()) return;
+                      const p = document.createElement('p');
+                      p.textContent = para.trim();
+                      out.appendChild(p);
+                    });
+                  }
+                } catch(e) { }
+              }
+            }
+            if (done) break;
+          }
+
+          if (!rawJson) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
 
           let result;
           try {
-            result = JSON.parse(raw);
+            result = JSON.parse(rawJson);
           } catch (e) {
-            console.error("Parse error on raw text:", raw);
+            console.error("Parse error on raw text:", rawJson);
             throw new Error(`Could not parse AI response for batch ${i + 1}. JSON mode was active but parsing failed.`);
           }
 
@@ -1597,18 +1661,6 @@ Return the result as a JSON object matching the requested schema.`;
           if (result.spelling_errors) finalResult.spelling_errors.push(...result.spelling_errors);
           if (result.grammar_issues) finalResult.grammar_issues.push(...result.grammar_issues);
         }
-
-        // ── Render transcription ──
-        const displayText = (settings.fixSpelling || settings.fixGrammar) ? (finalResult.corrected || finalResult.original) : finalResult.original;
-        const out = document.getElementById('transcription-out');
-        out.innerHTML = '';
-        const paragraphs = String(displayText).split(/\n\n+/);
-        paragraphs.forEach((para, i) => {
-          if (!para.trim()) return;
-          const p = document.createElement('p');
-          p.textContent = para.trim();
-          out.appendChild(p);
-        });
 
         // ── Render analysis ──
         if (settings.showAnalysis) {
