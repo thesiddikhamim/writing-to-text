@@ -1091,9 +1091,6 @@
               <div class="upload-sub">PNG · JPG · WEBP · HEIC (Multiple supported)</div>
             </div>
 
-            <div class="or-divider">or</div>
-            <button class="cam-btn" id="open-cam-btn">📷 Capture from Camera</button>
-
             <div id="preview-gallery"></div>
             <div id="preview-actions-wrap" style="display: none;">
               <div class="preview-actions">
@@ -1160,17 +1157,6 @@
   </main>
 
   <!-- MODALS -->
-  <div id="camera-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-head">Capture Image</div>
-      <video id="camera-video" autoplay playsinline></video>
-      <div class="modal-actions">
-        <button id="capture-btn" class="cam-btn" style="background:var(--sepia);color:var(--paper)">📸 Take Photo</button>
-        <button id="close-cam-btn" class="cam-btn secondary">Cancel</button>
-      </div>
-    </div>
-  </div>
-
   <div id="crop-modal" class="modal">
     <div class="modal-content">
       <div class="modal-head">Crop Image</div>
@@ -1342,46 +1328,9 @@
       clearStatus();
     });
 
-    // ══ CAMERA & CROP STATE ══
-    let stream = null;
+    // ══ CROP STATE ══
     let cropper = null;
     let currentCropId = null;
-
-    // ══ CAMERA CAPTURE ══
-    const cameraModal = document.getElementById('camera-modal');
-    const video = document.getElementById('camera-video');
-
-    document.getElementById('open-cam-btn').addEventListener('click', async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        video.srcObject = stream;
-        cameraModal.classList.add('show');
-      } catch (err) {
-        showStatus('Could not access camera. Make sure you have granted permissions.', 'error');
-        console.error(err);
-      }
-    });
-
-    function closeCamera() {
-      cameraModal.classList.remove('show');
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-      }
-    }
-
-    document.getElementById('close-cam-btn').addEventListener('click', closeCamera);
-
-    document.getElementById('capture-btn').addEventListener('click', async () => {
-      const c = document.createElement('canvas');
-      c.width = video.videoWidth;
-      c.height = video.videoHeight;
-      const ctx = c.getContext('2d');
-      ctx.drawImage(video, 0, 0, c.width, c.height);
-      const dataURL = c.toDataURL('image/jpeg', 0.92);
-      closeCamera();
-      await processAndAdd(dataURL, 'image/jpeg');
-    });
 
     // ══ CROP IMAGE ══
     const cropModal = document.getElementById('crop-modal');
