@@ -327,110 +327,100 @@ async function transcribe() {
   btn.disabled = true;
   label.innerHTML = '<span class="spinner"></span>Transcribing…';
 
-  // Show "turned off" state immediately in analysis panels
+  // Show "turned off" state in analysis panels upfront
   if (settings.showAnalysis) {
     if (!settings.fixSpelling) renderSpelling([], true);
-    if (!settings.fixGrammar) renderGrammar([], true);
+    if (!settings.fixGrammar)  renderGrammar([], true);
   }
 
-  const batchSize = 3;
+  const BATCH_SIZE = 3;
   const totalImages = imageItems.length;
   const batches = [];
-  for (let i = 0; i < totalImages; i += batchSize) {
-    batches.push(imageItems.slice(i, i + batchSize));
+  for (let i = 0; i < totalImages; i += BATCH_SIZE) {
+    batches.push(imageItems.slice(i, i + BATCH_SIZE));
   }
 
-  const finalResult = {
-    original: '',
-    corrected: '',
-    spelling_errors: [],
-    grammar_issues: []
-  };
+  const finalResult = { original: '', corrected: '', spelling_errors: [], grammar_issues: [] };
+
+  const langNote    = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
+  const paraNote    = settings.keepParagraphs
+    ? 'Preserve paragraph breaks exactly — separate each paragraph with \\n\\n.'
+    : 'Transcribe as one continuous block of text.';
+  const spellNote   = settings.fixSpelling
+    ? 'Fix every spelling mistake in "corrected". List each error in "spelling_errors".'
+    : 'Do not fix spelling. Set "corrected" = "original" and "spelling_errors" = [].';
+  const grammarNote = settings.fixGrammar
+    ? 'Fix grammar in "corrected". List each issue in "grammar_issues".'
+    : 'Do not fix grammar. Set "grammar_issues" = [].';
 
   try {
-    for (let i = 0; i < batches.length; i++) {
-      const currentBatchIndices = Array.from({ length: batches[i].length }, (_, k) => i * batchSize + k + 1);
-      showStatus(`Transcribing batch ${i + 1} of ${batches.length} (Pages ${currentBatchIndices.join(', ')})...`, 'loading');
+    for (let b = 0; b < batches.length; b++) {
+      const batch = batches[b];
+      const startPage = b * BATCH_SIZE + 1;
+      const endPage   = startPage + batch.length - 1;
+      const pageLabel = batch.length === 1 ? `page ${startPage}` : `pages ${startPage}–${endPage}`;
+      showStatus(`Transcribing ${pageLabel} of ${totalImages}…`, 'loading');
 
-      const imageParts = batches[i].map(item => ({
-        inline_data: {
-          mime_type: item.mimeType,
-          data: item.dataURL.split(',')[1]
-        }
+      const imageParts = batch.map(item => ({
+        inline_data: { mime_type: item.mimeType, data: item.dataURL.split(',')[1] }
       }));
-
-      const langNote = settings.lang === 'auto' ? 'Detect the language automatically.' : `The text is written in ${settings.lang}.`;
-      const paraNote = settings.keepParagraphs
-        ? 'Preserve the exact paragraph structure — each new paragraph in the handwriting must become a new paragraph in output, separated by \\n\\n.'
-        : 'Transcribe as a single continuous block of text.';
-      const spellNote = settings.fixSpelling
-        ? 'In the "corrected" field, fix every spelling mistake. In "spelling_errors" list each error.'
-        : 'Do not alter the original spelling — leave "corrected" the same as "original" and set "spelling_errors" to [].';
-      const grammarNote = settings.fixGrammar
-        ? 'Identify every grammatical error in the transcription and provide suggestions in "grammar_issues". Also apply these grammar fixes to the "corrected" field.'
-        : 'Do not identify or fix grammatical errors. Set "grammar_issues" to [].';
 
       const prompt = `You are an expert handwriting OCR and proofreading assistant.
 
-I have provided ${batches[i].length} image(s) containing handwritten text. They are provided in sequential order.
-These are pages ${currentBatchIndices.join(', ')} of a larger document.
+I have provided ${batch.length} image(s) in order. These are ${pageLabel} of a ${totalImages}-page document.
+Transcribe ALL ${batch.length} images in order and combine them into a single unified result.
 
-Carefully read the handwritten text in ALL ${batches[i].length} provided images and do the following:
-
-1. TRANSCRIPTION: Transcribe every word exactly as written. IMPORTANT: Transcribe all images in the order they are provided. Do not skip any image. Combine the transcription for this batch into a single unified text. ${langNote}
+1. TRANSCRIPTION: Transcribe every word exactly as written. ${langNote}
 2. PARAGRAPHS: ${paraNote}
 3. SPELLING: ${spellNote}
 4. GRAMMAR: ${grammarNote}
 
-Return the result as a JSON object matching the requested schema.`;
+Return ONLY the JSON object — no markdown, no commentary.`;
 
       const resp = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:streamGenerateContent?alt=sse&key=${settings.apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/${settings.model}:generateContent?key=${settings.apiKey}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             contents: [{
-              parts: [
-                ...imageParts,
-                { text: prompt }
-              ]
+              parts: [...imageParts, { text: prompt }]
             }],
             generationConfig: {
               temperature: 0.1,
-              maxOutputTokens: 8192,
-              response_mime_type: "application/json",
+              maxOutputTokens: 65536,
+              response_mime_type: 'application/json',
               response_schema: {
-                type: "OBJECT",
+                type: 'OBJECT',
                 properties: {
-                  original: { type: "STRING" },
-                  corrected: { type: "STRING" },
+                  original:  { type: 'STRING' },
+                  corrected: { type: 'STRING' },
                   spelling_errors: {
-                    type: "ARRAY",
+                    type: 'ARRAY',
                     items: {
-                      type: "OBJECT",
+                      type: 'OBJECT',
                       properties: {
-                        wrong: { type: "STRING" },
-                        correct: { type: "STRING" },
-                        note: { type: "STRING" }
+                        wrong:   { type: 'STRING' },
+                        correct: { type: 'STRING' },
+                        note:    { type: 'STRING' }
                       },
-                      required: ["wrong", "correct", "note"]
+                      required: ['wrong', 'correct', 'note']
                     }
                   },
                   grammar_issues: {
-                    type: "ARRAY",
+                    type: 'ARRAY',
                     items: {
-                      type: "OBJECT",
+                      type: 'OBJECT',
                       properties: {
-                        original: { type: "STRING" },
-                        corrected: { type: "STRING" },
-                        explanation: { type: "STRING" }
+                        original:    { type: 'STRING' },
+                        corrected:   { type: 'STRING' },
+                        explanation: { type: 'STRING' }
                       },
-                      required: ["original", "corrected", "explanation"]
+                      required: ['original', 'corrected', 'explanation']
                     }
                   }
                 },
-                required: ["original", "corrected", "spelling_errors", "grammar_issues"]
+                required: ['original', 'corrected', 'spelling_errors', 'grammar_issues']
               }
             }
           })
@@ -439,88 +429,51 @@ Return the result as a JSON object matching the requested schema.`;
 
       if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
-        const msg = err.error?.message || `HTTP ${resp.status}`;
-        throw new Error(`Batch ${i + 1} failed: ${msg}`);
+        throw new Error(`Batch ${b + 1}: ${err.error?.message || 'HTTP ' + resp.status}`);
       }
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder("utf-8");
-      let rawJson = "";
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (value) buffer += decoder.decode(value, { stream: true });
-        if (done) buffer += decoder.decode();
-
-        let lines = buffer.split('\n');
-        buffer = done ? "" : lines.pop();
-
-        for (const line of lines) {
-          const trimmedLine = line.trim();
-          if (!trimmedLine.startsWith('data: ')) continue;
-          const dataStr = trimmedLine.substring(6);
-          if (dataStr === '[DONE]') continue;
-          try {
-            const dataObj = JSON.parse(dataStr);
-            const chunkText = dataObj.candidates?.[0]?.content?.parts?.[0]?.text || "";
-            rawJson += chunkText;
-
-            // ── Live streaming: transcription text only ──
-            const transcriptKey = (settings.fixSpelling || settings.fixGrammar) ? '"corrected": "' : '"original": "';
-            const txStart = rawJson.indexOf(transcriptKey);
-            if (txStart !== -1) {
-              let partial = rawJson.substring(txStart + transcriptKey.length);
-              // find the first unescaped closing quote
-              for (let j = 0; j < partial.length; j++) {
-                if (partial[j] === '"' && partial[j - 1] !== '\\') {
-                  partial = partial.substring(0, j);
-                  break;
-                }
-              }
-              partial = partial.replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-              const baseText = (settings.fixSpelling || settings.fixGrammar) ? finalResult.corrected : finalResult.original;
-              const combinedText = baseText ? (baseText + '\n\n' + partial) : partial;
-              const out = document.getElementById('transcription-out');
-              out.innerHTML = '';
-              combinedText.split(/\n\n+/).forEach(para => {
-                if (!para.trim()) return;
-                const p = document.createElement('p');
-                p.textContent = para.trim();
-                out.appendChild(p);
-              });
-            }
-          } catch (e) { /* partial SSE chunk — ignore */ }
-        }
-        if (done) break;
-      }
-
-      if (!rawJson) throw new Error(`Gemini returned an empty response for batch ${i + 1}.`);
+      const data = await resp.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!text) throw new Error(`Batch ${b + 1}: empty response from API.`);
 
       let result;
       try {
-        result = JSON.parse(rawJson);
+        result = JSON.parse(text);
       } catch (e) {
-        console.error("Parse error on raw text:", rawJson);
-        throw new Error(`Could not parse AI response for batch ${i + 1}.`);
+        console.error('Parse error:', text);
+        throw new Error(`Batch ${b + 1}: could not parse API response.`);
       }
 
-      // Merge results
+      // Merge into running result
       finalResult.original  += (finalResult.original  ? '\n\n' : '') + (result.original  || '');
       finalResult.corrected += (finalResult.corrected ? '\n\n' : '') + (result.corrected || '');
-      if (result.spelling_errors) finalResult.spelling_errors.push(...result.spelling_errors);
-      if (result.grammar_issues)  finalResult.grammar_issues.push(...result.grammar_issues);
+      if (result.spelling_errors?.length) finalResult.spelling_errors.push(...result.spelling_errors);
+      if (result.grammar_issues?.length)  finalResult.grammar_issues.push(...result.grammar_issues);
+
+      // Update transcription panel after each batch
+      const displayText = (settings.fixSpelling || settings.fixGrammar) ? finalResult.corrected : finalResult.original;
+      const out = document.getElementById('transcription-out');
+      out.innerHTML = '';
+      displayText.split(/\n\n+/).forEach(para => {
+        if (!para.trim()) return;
+        const p = document.createElement('p');
+        p.textContent = para.trim();
+        out.appendChild(p);
+      });
     }
 
-    // ── Render analysis panels after all batches complete ──
+    // Render analysis panels once all batches are done
     if (settings.showAnalysis) {
-      renderSpelling(finalResult.spelling_errors || [], !settings.fixSpelling);
-      renderGrammar(finalResult.grammar_issues   || [], !settings.fixGrammar);
+      renderSpelling(finalResult.spelling_errors, !settings.fixSpelling);
+      renderGrammar(finalResult.grammar_issues,   !settings.fixGrammar);
     }
 
     const se = finalResult.spelling_errors.length;
     const gi = finalResult.grammar_issues.length;
-    showStatus(`<i data-lucide="check-circle-2" width="16" height="16"></i> Transcription complete — ${totalImages} image${totalImages !== 1 ? 's' : ''} processed. ${se} spelling issue${se !== 1 ? 's' : ''}, ${gi} grammar issue${gi !== 1 ? 's' : ''}.`, 'success');
+    showStatus(
+      `<i data-lucide="check-circle-2" width="16" height="16"></i> Done — ${totalImages} image${totalImages !== 1 ? 's' : ''} processed. ${se} spelling issue${se !== 1 ? 's' : ''}, ${gi} grammar issue${gi !== 1 ? 's' : ''}.`,
+      'success'
+    );
 
   } catch (e) {
     console.error(e);
