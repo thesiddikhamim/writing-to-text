@@ -21,6 +21,18 @@
   --glass-blur: blur(16px);
 }
 
+html.light-theme {
+  --bg-color: #fafafa;
+  --bg-panel: rgba(255, 255, 255, 0.7);
+  --bg-panel-solid: #ffffff;
+  --bg-hover: rgba(244, 244, 245, 0.8);
+  --border-color: rgba(228, 228, 231, 1);
+  --text-main: #09090b;
+  --text-muted: #71717a;
+  
+  --shadow-panel: 0 8px 32px rgba(0, 0, 0, 0.08);
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -49,6 +61,11 @@ body {
   pointer-events: none;
 }
 
+html.light-theme .ambient-bg {
+  background: radial-gradient(circle at 50% 50%, rgba(139, 92, 246, 0.06), transparent 40%),
+              radial-gradient(circle at 80% 20%, rgba(59, 130, 246, 0.04), transparent 30%);
+}
+
 @keyframes bgDrift {
   0% { transform: translateY(0) scale(1); }
   100% { transform: translateY(5%) scale(1.05); }
@@ -59,7 +76,7 @@ header {
   position: sticky;
   top: 0;
   z-index: 100;
-  background: rgba(9, 9, 11, 0.7);
+  /* background: rgba(9, 9, 11, 0.7); */
   backdrop-filter: var(--glass-blur);
   -webkit-backdrop-filter: var(--glass-blur);
   border-bottom: 1px solid var(--border-color);
@@ -85,6 +102,26 @@ header {
 }
 
 .logo i {
+  color: var(--primary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+#theme-btn {
+  background: none;
+  border: none;
+  color: var(--text-main);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+#theme-btn:hover {
   color: var(--primary);
 }
 
@@ -175,6 +212,11 @@ header {
   font-family: 'Inter', sans-serif;
   font-size: 0.9rem;
   transition: all 0.2s;
+}
+
+html.light-theme .setting-input,
+html.light-theme .setting-select {
+  background: #f4f4f5;
 }
 
 .setting-input:focus,
@@ -384,6 +426,10 @@ main {
   position: relative;
 }
 
+html.light-theme .upload-zone {
+  background: rgba(0, 0, 0, 0.02);
+}
+
 .upload-zone:hover,
 .upload-zone.drag-over {
   border-color: var(--primary);
@@ -450,6 +496,10 @@ main {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+html.light-theme .preview-item {
+  background: rgba(255, 255, 255, 0.8);
 }
 
 .preview-item img {
@@ -655,6 +705,13 @@ main {
   border-color: rgba(239, 68, 68, 0.3);
 }
 
+html.light-theme .tool-btn {
+  background: transparent;
+}
+html.light-theme .tool-btn:hover {
+  background: rgba(0, 0, 0, 0.05);
+}
+
 .output-panel .panel-body { padding: 0;}
 
 #transcription-out {
@@ -780,6 +837,10 @@ main {
   opacity: 0;
 }
 
+html.light-theme .issue-item {
+  background: #ffffff;
+}
+
 .issue-item.spelling { border-left: 3px solid var(--accent-red); }
 .issue-item.grammar { border-left: 3px solid var(--accent-blue); }
 
@@ -833,6 +894,10 @@ main {
   max-width: 600px;
   overflow: hidden;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+html.light-theme .glass-modal {
+  background: #ffffff;
 }
 
 .modal-head {

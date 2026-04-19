@@ -51,6 +51,35 @@ overlay.addEventListener('click', closeSettings);
 function openSettings() { panel.classList.add('open'); menuBtn.classList.add('open'); overlay.classList.add('show'); }
 function closeSettings() { panel.classList.remove('open'); menuBtn.classList.remove('open'); overlay.classList.remove('show'); }
 
+// ══ THEME TOGGLE ══
+const themeBtn = document.getElementById('theme-btn');
+const rootElement = document.documentElement;
+
+let isDark = localStorage.getItem('theme') !== 'light';
+if (!isDark) {
+  rootElement.classList.add('light-theme');
+  updateThemeIcon(false);
+}
+
+themeBtn.addEventListener('click', () => {
+  isDark = !isDark;
+  if (!isDark) {
+    rootElement.classList.add('light-theme');
+    localStorage.setItem('theme', 'light');
+  } else {
+    rootElement.classList.remove('light-theme');
+    localStorage.setItem('theme', 'dark');
+  }
+  updateThemeIcon(isDark);
+});
+
+function updateThemeIcon(dark) {
+  themeBtn.innerHTML = dark 
+    ? '<i data-lucide="moon" width="20" height="20"></i>' 
+    : '<i data-lucide="sun" width="20" height="20"></i>';
+  lucide.createIcons();
+}
+
 document.getElementById('toggle-key-vis').addEventListener('click', () => {
   const inp = document.getElementById('api-key-input');
   inp.type = inp.type === 'password' ? 'text' : 'password';
