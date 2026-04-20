@@ -439,10 +439,15 @@ Return ONLY the JSON object — no markdown, no commentary.`;
 
       let result;
       try {
-        result = JSON.parse(text);
+        // Robust cleaning: remove potential markdown fences and extra whitespace
+        let cleanText = text.trim();
+        if (cleanText.startsWith('```')) {
+          cleanText = cleanText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/i, '').trim();
+        }
+        result = JSON.parse(cleanText);
       } catch (e) {
-        console.error('Parse error:', text);
-        throw new Error(`Batch ${i + 1}: could not parse API response.`);
+        console.error('OCR Parse error on text:', text);
+        throw new Error(`Batch ${i + 1}: The AI response wasn't in the correct format. This can happen if the text is too long or complex. Try processing fewer images at once if this continues.`);
       }
 
       // Append to running transcription output immediately
