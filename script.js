@@ -453,15 +453,27 @@ Return ONLY the JSON object — no markdown, no commentary.`;
 
       let result;
       try {
-        // Robust cleaning: remove potential markdown fences and extra whitespace
         let cleanText = text.trim();
+        // Remove markdown fences if present
         if (cleanText.startsWith('```')) {
           cleanText = cleanText.replace(/^```[a-z]*\s*/i, '').replace(/\s*```$/i, '').trim();
         }
         result = JSON.parse(cleanText);
       } catch (e) {
-        console.error('OCR Parse error on text:', text);
-        throw new Error(`Batch ${i + 1}: could not parse AI response. The text was not in the expected JSON format. Try processing fewer images.`);
+        // Fallback: try to find the first '{' and last '}'
+        try {
+          const firstBrace = text.indexOf('{');
+          const lastBrace = text.lastIndexOf('}');
+          if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            const potentialJson = text.substring(firstBrace, lastBrace + 1);
+            result = JSON.parse(potentialJson);
+          } else {
+            throw e;
+          }
+        } catch (e2) {
+          console.error('OCR Parse error on text:', text);
+          throw new Error(`Batch ${i + 1}: could not parse AI response. The text was not in the expected JSON format. Try processing fewer images.`);
+        }
       }
 
       // Append to running transcription output immediately
