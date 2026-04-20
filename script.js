@@ -389,7 +389,7 @@ Return ONLY the JSON object — no markdown, no commentary.`;
             }],
             generationConfig: {
               temperature: 0.1,
-              maxOutputTokens: 8192,
+              maxOutputTokens: 1000000,
               response_mime_type: 'application/json',
               response_schema: {
                 type: 'OBJECT',
