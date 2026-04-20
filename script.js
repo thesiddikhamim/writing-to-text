@@ -428,13 +428,27 @@ Return ONLY the JSON object — no markdown, no commentary.`;
         }
       );
 
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({}));
-        throw new Error(`Batch ${i + 1}: ${err.error?.message || 'HTTP ' + resp.status}`);
+      let data;
+      try {
+        data = await resp.json();
+      } catch (e) {
+        throw new Error(`Batch ${i + 1}: could not parse API response. The server returned an invalid format.`);
       }
 
-      const data = await resp.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (data.error) {
+        throw new Error(`Batch ${i + 1}: ${data.error.message || 'API Error'}`);
+      }
+
+      const candidate = data.candidates?.[0];
+      if (!candidate) {
+        throw new Error(`Batch ${i + 1}: No response candidates returned. This might be due to safety filters.`);
+      }
+
+      if (candidate.finishReason === 'SAFETY') {
+        throw new Error(`Batch ${i + 1}: Response was blocked by safety filters.`);
+      }
+
+      const text = candidate.content?.parts?.[0]?.text;
       if (!text) throw new Error(`Batch ${i + 1}: empty response from API.`);
 
       let result;
@@ -447,7 +461,7 @@ Return ONLY the JSON object — no markdown, no commentary.`;
         result = JSON.parse(cleanText);
       } catch (e) {
         console.error('OCR Parse error on text:', text);
-        throw new Error(`Batch ${i + 1}: The AI response wasn't in the correct format. This can happen if the text is too long or complex. Try processing fewer images at once if this continues.`);
+        throw new Error(`Batch ${i + 1}: could not parse AI response. The text was not in the expected JSON format. Try processing fewer images.`);
       }
 
       // Append to running transcription output immediately
